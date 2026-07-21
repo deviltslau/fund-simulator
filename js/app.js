@@ -157,9 +157,15 @@
           ? (prevVix != null && prevVix >= p.sellThresh && v < p.sellThresh)
           : (v < p.sellThresh);
         if (trig) {
-          trades.push({ id: uid(), fundCode: p.fundCode, action: "sell", date: d, amount: 0, clearAll: true });
+          const partial = p.sellAmount > 0;
+          // 部分卖出：按金额卖出（保留底仓）；否则清仓
+          trades.push({
+            id: uid(), fundCode: p.fundCode, action: "sell", date: d,
+            amount: partial ? p.sellAmount : 0, clearAll: !partial,
+          });
           holding = false; sells++;
-          cash += p.amount; // 近似回收现金（清仓后下一笔才能再买）
+          // 回收现金（近似）：部分卖出≈卖出金额；清仓≈买入时投入（忽略盈亏，仅用于避免「无现金却买入」失真）
+          cash += partial ? p.sellAmount : p.amount;
         }
       }
       // 买入：空仓且 VIX 突破/高于买入阈值
@@ -188,6 +194,7 @@
       buyThresh: +$("autoBuy").value,
       sellThresh: +$("autoSell").value,
       amount: +$("autoAmount").value || 0,
+      sellAmount: +$("autoSellAmt").value || 0,
       mode: $("autoMode").value,
       initialCapital: Math.max(0, +$("initialCapital").value || 0),
       feeRate: Math.max(0, (+$("feeRate").value || 0) / 100),
@@ -253,6 +260,7 @@
       }
       slider.value = eng.dates.indexOf(state.viewDate);
       $("viewDateLabel").textContent = state.viewDate;
+      $("holdDate").value = state.viewDate;
       updateViewVix();
     }
     renderTabs();
@@ -383,21 +391,65 @@
     });
   }
 
+  // 日期加减（YYYY-MM-DD ± n 天）
+  function addDays(dstr, n) {
+    const d = new Date(dstr + "T00:00:00");
+    d.setDate(d.getDate() + n);
+    const pad = x => String(x).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
   function renderHoldings() {
     const eng = state.activeEngine;
     const tb = $("holdingsTable").querySelector("tbody");
     tb.innerHTML = "";
+    const foot = $("holdTotalRow");
     const snap = (eng && eng.positionsByDate[state.viewDate]) || {};
     const codes = Object.keys(snap);
-    if (!codes.length) { tb.innerHTML = `<tr><td colspan="7" class="hint">查看日(${state.viewDate}) 无持仓</td></tr>`; return; }
-    codes.forEach(code => {
+    if (!codes.length) {
+      tb.innerHTML = `<tr><td colspan="9" class="hint">查看日(${state.viewDate}) 无持仓</td></tr>`;
+      foot.innerHTML = ""; $("holdSummary").innerHTML = "";
+      return;
+    }
+    const prevDate = addDays(state.viewDate, -1); // 前一交易日（连续轴下即昨日，周末兜底到上周五）
+    let totMv = 0, totPnl = 0, totCost = 0, totDay = 0;
+    const rows = codes.map(code => {
       const p = snap[code];
+      const f = D.getFund(code);
+      const navPrev = f ? D.navOnOrBefore(f, prevDate) : null;
+      const dayPnl = (navPrev != null) ? p.shares * (p.nav - navPrev) : 0; // 当日盈亏：净值变动 × 份额
+      totMv += p.mv; totPnl += p.pnl; totCost += p.costValue; totDay += dayPnl;
+      return { p, dayPnl };
+    }).sort((a, b) => b.p.mv - a.p.mv); // 市值大者在前
+
+    rows.forEach(({ p, dayPnl }) => {
+      const ratio = totMv > 1e-9 ? (p.mv / totMv * 100) : 0;
       const tr = document.createElement("tr");
       tr.innerHTML = `<td>${p.name}</td><td>${num(p.shares, 2)}</td><td>${num(p.avgCost, 4)}</td>` +
-        `<td>${num(p.nav, 4)}</td><td>${money(p.mv)}</td>` +
-        `<td class="${cls(p.pnl)}">${money(p.pnl)}</td><td class="${cls(p.pnlPct)}">${pct(p.pnlPct)}</td>`;
+        `<td>${num(p.nav, 4)}</td>` +
+        `<td class="${cls(dayPnl)}">${money(dayPnl)}</td>` +
+        `<td>${money(p.mv)}</td>` +
+        `<td><div class="bar"><span style="width:${ratio.toFixed(1)}%"></span></div><small>${ratio.toFixed(1)}%</small></td>` +
+        `<td class="${cls(p.pnl)}">${money(p.pnl)}</td>` +
+        `<td class="${cls(p.pnlPct)}">${pct(p.pnlPct)}</td>`;
       tb.appendChild(tr);
     });
+
+    // 汇总行
+    const totPct = totCost > 1e-9 ? totPnl / totCost : 0;
+    foot.innerHTML =
+      `<td colspan="4"><b>合计（${codes.length} 只）</b></td>` +
+      `<td class="${cls(totDay)}"><b>${money(totDay)}</b></td>` +
+      `<td><b>${money(totMv)}</b></td><td></td>` +
+      `<td class="${cls(totPnl)}"><b>${money(totPnl)}</b></td>` +
+      `<td class="${cls(totPct)}"><b>${pct(totPct)}</b></td>`;
+
+    // 查看日盈亏概览卡片
+    $("holdSummary").innerHTML =
+      `<div class="hsum"><span class="hl">查看日总市值</span><b>${money(totMv)}</b></div>` +
+      `<div class="hsum"><span class="hl">当日盈亏</span><b class="${cls(totDay)}">${money(totDay)}</b></div>` +
+      `<div class="hsum"><span class="hl">累计浮动盈亏</span><b class="${cls(totPnl)}">${money(totPnl)}</b></div>` +
+      `<div class="hsum"><span class="hl">总收益率</span><b class="${cls(totPct)}">${pct(totPct)}</b></div>`;
   }
 
   function renderFundToggles() {
@@ -604,6 +656,25 @@
       const eng = state.activeEngine;
       const idx = +slider.value;
       state.viewDate = eng.dates[idx];
+      $("viewDateLabel").textContent = state.viewDate;
+      $("holdDate").value = state.viewDate;
+      renderHoldings();
+      renderTradeDetail();
+      renderMain();
+      renderVIX();
+      updateViewVix();
+    };
+
+    // 独立日期选择器（与滑块双向联动，可直选任意一天，含周末）
+    $("holdDate").onchange = () => {
+      const v = $("holdDate").value;
+      if (!v) return;
+      const clamped = v < state.startDate ? state.startDate : (v > state.endDate ? state.endDate : v);
+      state.viewDate = clamped;
+      const eng = state.activeEngine;
+      let idx = eng.dates.indexOf(clamped);
+      if (idx < 0) idx = nearestIdx(eng.dates, clamped); // 兜底（连续日历日下不会触发）
+      $("viewSlider").value = idx >= 0 ? idx : 0;
       $("viewDateLabel").textContent = state.viewDate;
       renderHoldings();
       renderTradeDetail();

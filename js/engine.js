@@ -16,7 +16,9 @@ FS.Engine = (function () {
     const initialCapital = strategy.initialCapital;
     const feeRate = strategy.feeRate;
     const codesUsed = [...new Set(strategy.trades.map(t => t.fundCode))];
-    const dates = D.unionDates(codesUsed, start, end, ctx.benchmarkCode);
+    // 连续日历日：覆盖周末/节假日，使任意一天（含非交易日）都能查看持仓与盈亏。
+    // 非交易日的净值由 navOnOrBefore 兜底到最近一个交易日，曲线保持连续。
+    const dates = D.calendarDates(start, end);
 
     if (!dates.length) {
       return { empty: true, dates: [], equity: [], cash: [], mv: [],

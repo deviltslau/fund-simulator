@@ -71,6 +71,22 @@ FS.Data = (function () {
   }
   function navExact(fund, date) { return fund ? (fund.byDate.get(date) ?? null) : null; }
 
+  // 连续日历日（含周末/节假日）：用于「任意一天都能查看盈亏」的连续回测轴。
+  // 非交易日通过 navOnOrBefore 自动兜底到最近一个交易日的净值，曲线在周末保持连续。
+  function calendarDates(start, end) {
+    if (!start || !end) return [];
+    const pad = n => String(n).padStart(2, "0");
+    const out = [];
+    let d = new Date(start + "T00:00:00");
+    const e = new Date(end + "T00:00:00");
+    if (isNaN(d) || isNaN(e) || d > e) return [];
+    while (d <= e) {
+      out.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+      d.setDate(d.getDate() + 1);
+    }
+    return out;
+  }
+
   // 合并若干基金 + 基准在 [start,end] 内的交易日（用于统一时间轴）
   function unionDates(codes, start, end, benchmarkCode) {
     const set = new Set();
@@ -144,7 +160,7 @@ FS.Data = (function () {
 
   return {
     registry, addFund, loadSample, listFunds, getFund, getBenchmark,
-    dateRange, navOnOrBefore, navExact, unionDates, parseCSV, fetchFundJSONP,
+    dateRange, navOnOrBefore, navExact, calendarDates, unionDates, parseCSV, fetchFundJSONP,
     getVIX, vixOnOrBefore,
   };
 })();
