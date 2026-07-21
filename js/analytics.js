@@ -74,8 +74,9 @@ FS.Analytics = (function () {
         return {
           id: t.id, date: t.date,
           fundCode: t.fundCode, fundName: f ? f.name : t.fundCode,
-          action: t.action, amount: t.amount, clearAll: !!t.clearAll,
-          price: nav, realized: r ? r.realizedPnL : null,
+          action: t.action, amount: t.amount, unit: t.unit, dca: !!t.dca, clearAll: !!t.clearAll,
+          price: nav, shares: t._shares || 0,
+          realized: r ? r.realizedPnL : null,
           pnlPct: r ? r.pnlPct : null,
         };
       })

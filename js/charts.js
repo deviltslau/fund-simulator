@@ -101,8 +101,8 @@ FS.Charts = (function () {
             const d = p.data || {};
             const tag = d.mtype === "buy" ? "买入" : "卖出";
             const nav = d.nav == null ? "—" : (+d.nav).toFixed(4);
-            const amt = d.clearAll ? "清仓" : (d.unit === "shares" ? d.amount + " 份" : "¥" + (+d.amount).toLocaleString("zh-CN"));
-            const unit = d.clearAll ? "" : (d.unit === "shares" ? "份额" : "金额");
+            const amt = d.clearAll ? "清仓" : (d.unit === "layer" ? d.amount + " 层" : "¥" + (+d.amount).toLocaleString("zh-CN"));
+            const unit = d.clearAll ? "" : (d.unit === "layer" ? "层数" : "金额");
             return `${d.date}<br/>${tag}　${d.fundName || ""}<br/>成交净值：<b>${nav}</b><br/>成交${unit}：<b>${amt}</b>`;
           },
         },
@@ -132,7 +132,7 @@ FS.Charts = (function () {
           const tag = m.type === "buy" ? "买入" : "卖出";
           const color = m.type === "buy" ? "#16a34a" : "#dc2626";
           const nav = m.nav == null ? "—" : (+m.nav).toFixed(4);
-          const amt = m.clearAll ? "清仓" : (m.unit === "shares" ? m.amount + " 份" : "¥" + (+m.amount).toLocaleString("zh-CN"));
+          const amt = m.clearAll ? "清仓" : (m.unit === "layer" ? m.amount + " 层" : "¥" + (+m.amount).toLocaleString("zh-CN"));
           s += `<span style="color:${color}">▲ ${tag} ${m.fundName || ""} · 净值 ${nav} · ${amt}</span><br/>`;
         });
       }

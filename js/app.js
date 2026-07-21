@@ -148,7 +148,7 @@
     tr.appendChild(cell(sel("ac-op", (init && init.op) || ">", [[">", "> 高于"], ["<", "< 低于"]])));
     const vi = document.createElement("input"); vi.type = "number"; vi.className = "ac-vix"; vi.value = (init && init.vix != null) ? init.vix : 30; vi.step = "1"; vi.min = "0"; tr.appendChild(cell(vi));
     const am = document.createElement("input"); am.type = "number"; am.className = "ac-amt"; am.value = (init && init.amount) ? init.amount : 20000; am.step = "1000"; am.min = "0"; tr.appendChild(cell(am));
-    tr.appendChild(cell(sel("ac-unit", (init && init.unit) || "cash", [["cash", "元"], ["shares", "份额"]])));
+    tr.appendChild(cell(sel("ac-unit", (init && init.unit) || "cash", [["cash", "元"], ["layer", "层仓"]])));
     const del = document.createElement("button"); del.type = "button"; del.className = "btn tiny ac-del"; del.textContent = "✕"; del.onclick = () => tr.remove();
     tr.appendChild(cell(del));
     $("autoCondBody").appendChild(tr);
@@ -163,7 +163,7 @@
 
   // ---------- VIX 自动交易生成（分级条件）----------
   // p: {fundCode,start,end,mode,initialCapital,feeRate,
-  //     conditions:[{action:'buy'|'sell',op:'>'|'<',vix:Number,amount:Number,unit:'cash'|'shares'}]}
+  //     conditions:[{action:'buy'|'sell',op:'>'|'<',vix:Number,amount:Number,unit:'cash'|'layer'}]}
   // 每天先卖后买；同方向多条命中只取一条：买入取 VIX 阈值最高的，卖出取最低的。
   // 突破模式：仅在 VIX 穿越阈值的「当日」触发一次；持续模式：每个满足条件的交易日都触发（对称）。
   // 返回 {trades:[{id,fundCode,action,date,amount,unit,clearAll:false}], log, buys, sells}
@@ -176,6 +176,7 @@
     let cash = p.initialCapital || 0;   // 仅用于在生成阶段避免「无现金却买入」的失真
     let sharesHeld = 0;                // 模拟持仓份额（持续模式卖出判定用）
     let prevVix = null;
+    let dcaIdx = 0;                    // 定投「每N交易日」计数器
     let buys = 0, sells = 0;
     const trades = [];
     const hits = (c, v, prev, mode) => {
@@ -196,8 +197,10 @@
       const sellHits = p.conditions.filter(c => c.action === "sell" && hits(c, v, prevVix, p.mode));
       if (sharesHeld > 1e-9 && sellHits.length) {
         const c = sellHits.reduce((a, b) => (b.vix < a.vix ? b : a));
-        const isShares = c.unit === "shares";
-        const sellShares = isShares ? Math.min(c.amount, sharesHeld) : Math.min((c.amount || 0) / nav, sharesHeld);
+        const isLayer = c.unit === "layer";
+        const sellShares = isLayer
+          ? Math.min(c.amount * 0.1 * sharesHeld, sharesHeld)
+          : Math.min((c.amount || 0) / nav, sharesHeld);
         if (sellShares > 1e-9) {
           trades.push({ id: uid(), fundCode: p.fundCode, action: "sell", date: d, amount: c.amount, unit: c.unit, clearAll: false });
           cash += sellShares * nav * (1 - feeRate);
@@ -209,13 +212,45 @@
       const buyHits = p.conditions.filter(c => c.action === "buy" && hits(c, v, prevVix, p.mode));
       if (buyHits.length) {
         const c = buyHits.reduce((a, b) => (b.vix > a.vix ? b : a));
-        const isShares = c.unit === "shares";
-        const need = isShares ? c.amount * nav * (1 + feeRate) : c.amount;
-        if (need <= cash + 1e-6) {
+        const isLayer = c.unit === "layer";
+        let buyShares = 0, spend = 0, need = 0, okBuy = true;
+        if (isLayer) {
+          // 层仓：N 层 = N×10% 的当前现金（10 层≈全仓）
+          spend = Math.min(c.amount * 0.1 * cash, cash);
+          if (spend <= 1e-6) okBuy = false;
+          else { need = spend; buyShares = spend * (1 - feeRate) / nav; }
+        } else {
+          need = c.amount;
+          buyShares = (c.amount * (1 - feeRate)) / nav;
+        }
+        if (okBuy && need <= cash + 1e-6) {
           trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: c.amount, unit: c.unit, clearAll: false });
-          if (isShares) { sharesHeld += c.amount; cash -= c.amount * nav * (1 + feeRate); }
-          else { sharesHeld += (c.amount * (1 - feeRate)) / nav; cash -= c.amount; }
+          if (isLayer) { cash -= spend; sharesHeld += buyShares; }
+          else { cash -= c.amount; sharesHeld += buyShares; }
           buys++;
+        }
+      }
+
+      // 定投（与 VIX 条件并行，仅买入）
+      if (p.dca && p.dca.enabled) {
+        let hit = false;
+        if (p.dca.freq === "month") hit = (d.slice(8, 10) === "01");           // 每月 1 日
+        else if (p.dca.freq === "week") hit = (new Date(d + "T00:00:00").getDay() === 1); // 每周一
+        else if (p.dca.freq === "ndays") { dcaIdx++; hit = (dcaIdx % p.dca.n === 0); } // 每 N 交易日
+        if (hit) {
+          const u = p.dca.unit, amt = p.dca.amount;
+          if (u === "layer") {
+            const sp = Math.min(amt * 0.1 * cash, cash);
+            if (sp > 1e-6 && sp <= cash + 1e-6) {
+              trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: amt, unit: "layer", dca: true, clearAll: false });
+              cash -= sp; sharesHeld += sp * (1 - feeRate) / nav; buys++;
+            }
+          } else {
+            if (amt <= cash + 1e-6) {
+              trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: amt, unit: "cash", dca: true, clearAll: false });
+              cash -= amt; sharesHeld += (amt * (1 - feeRate)) / nav; buys++;
+            }
+          }
         }
       }
       prevVix = v;
@@ -235,6 +270,17 @@
       if (!action || !op || !(vix >= 0) || amount <= 0) return; // 跳过未填完的行
       conditions.push({ action, op, vix, amount, unit });
     });
+    // 定投（定时定额，仅买入）
+    const dcaEl = $("dcaEnabled");
+    const dca = (dcaEl && dcaEl.checked) ? (() => {
+      const freq = $("dcaFreq").value;
+      const n = +$("dcaN").value || 0;
+      const amount = +$("dcaAmount").value || 0;
+      const unit = $("dcaUnit").value;
+      if (!(amount > 0)) return null;
+      if (freq === "ndays" && !(n > 0)) return null;
+      return { enabled: true, freq, n, amount, unit };
+    })() : null;
     return {
       fundCode: $("autoFund").value,
       start: $("autoStart").value || state.startDate,
@@ -242,7 +288,7 @@
       mode: $("autoMode").value,
       initialCapital: Math.max(0, +$("initialCapital").value || 0),
       feeRate: Math.max(0, (+$("feeRate").value || 0) / 100),
-      conditions,
+      conditions, dca,
     };
   }
 
@@ -401,9 +447,10 @@
     if (!a || a.empty || !a.tradeDetail.length) { tb.innerHTML = `<tr><td colspan="8" class="hint">暂无交易</td></tr>`; return; }
     a.tradeDetail.forEach(t => {
       const tr = document.createElement("tr");
-      const amt = t.action === "sell" && t.clearAll
+      const amtRaw = (t.action === "sell" && t.clearAll)
         ? "清仓(全部)"
-        : (t.unit === "shares" ? num(t.amount, 2) + " 份" : money(t.amount));
+        : (t.unit === "layer" ? num(t.amount, 0) + " 层" : money(t.amount));
+      const amt = (t.dca && t.action === "buy") ? "定投·" + amtRaw : amtRaw;
 
       // 盈亏与收益率：
       //  - 卖出：已实现盈亏（来自引擎）
@@ -416,10 +463,9 @@
         const f = D.getFund(t.fundCode);
         const navView = f && state.viewDate >= t.date ? D.navOnOrBefore(f, state.viewDate) : null;
         if (navView != null) {
-          let shares, net;
-          if (t.unit === "shares") { shares = +t.amount || 0; net = shares * t.price; }
-          else { net = (+t.amount || 0) * (1 - feeRate); shares = net / t.price; }
-          const floatPnl = shares * navView - net;
+          // 已成交份额由引擎解出（t.shares），与单位（元/层仓）无关
+          const shares = t.shares || 0;
+          const floatPnl = shares * navView - shares * t.price;
           const floatPct = navView / t.price - 1;
           rpCls = cls(floatPnl);
           rp = `${money(floatPnl)} <span class="tag-float">浮</span>`;
@@ -853,6 +899,8 @@
     $("autoRun").onclick = () => runAuto(true);
     $("autoAdd").onclick = () => runAuto(false);
     $("autoAddCond").onclick = () => addCondRow();
+    // 定投频率切换：仅「每N交易日」需要填间隔
+    $("dcaFreq").onchange = () => { $("dcaNWrap").style.display = $("dcaFreq").value === "ndays" ? "" : "none"; };
 
     // CSV 导入
     $("impBtn").onclick = () => {

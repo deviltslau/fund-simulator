@@ -71,17 +71,20 @@ FS.Engine = (function () {
         if (nav == null) continue;
 
         if (t.action === "buy") {
-          const isShares = t.unit === "shares";
+          const unit = t.unit || "cash";
           const amt = Math.max(0, +t.amount || 0);
           if (amt <= 0) continue;
           const p = positions[t.fundCode] || { shares: 0, avgCost: 0 };
-          let sharesBought, costBasis, fee;
-          if (isShares) {
-            sharesBought = amt;                 // amount 即份额数
-            costBasis = sharesBought * nav;      // 成本 = 份额 × 净值
-            fee = costBasis * feeRate;
-            cash -= costBasis + fee;
-          } else {
+          let sharesBought, costBasis, fee, spend;
+          if (unit === "layer") {
+            // 层仓：N 层 = N×10% 的当前现金（10 层≈全仓）；现金不足则跳过该笔
+            spend = Math.min(amt * 0.1 * cash, cash);
+            if (spend <= 1e-6) continue;
+            fee = spend * feeRate;
+            sharesBought = (spend - fee) / nav;
+            costBasis = spend - fee;
+            cash -= spend;
+          } else { // cash：固定金额（元）
             fee = amt * feeRate;
             sharesBought = (amt - fee) / nav;
             costBasis = amt - fee;              // 净投入
@@ -90,13 +93,16 @@ FS.Engine = (function () {
           const newShares = p.shares + sharesBought;
           const newAvg = (p.shares * p.avgCost + costBasis) / newShares;
           positions[t.fundCode] = { shares: newShares, avgCost: newAvg };
+          t._shares = sharesBought; // 记录已成交份额，供明细/浮动盈亏使用
         } else { // sell
           const p = positions[t.fundCode];
           if (!p || p.shares <= 0) continue;
-          const isShares = t.unit === "shares";
-          let sellShares = t.clearAll ? p.shares
-            : (isShares ? Math.min(+t.amount || 0, p.shares)
-                           : (+t.amount || 0) / nav);
+          const unit = t.unit || "cash";
+          const amt = Math.max(0, +t.amount || 0);
+          let sellShares;
+          if (t.clearAll) sellShares = p.shares;
+          else if (unit === "layer") sellShares = Math.min(amt * 0.1 * p.shares, p.shares); // N 层 = N×10% 持仓
+          else sellShares = Math.min(amt / nav, p.shares);                            // cash：元→份额
           sellShares = Math.min(sellShares, p.shares);
           if (sellShares <= 1e-9) continue;
           const proceeds = sellShares * nav;
@@ -105,6 +111,7 @@ FS.Engine = (function () {
           cash += proceeds - fee;
           p.shares -= sellShares;
           if (p.shares < 1e-9) delete positions[t.fundCode];
+          t._shares = sellShares;
           realized.push({
             tradeId: t.id, fundCode: t.fundCode, fundName: f.name,
             date: d, action: "sell", shares: sellShares, price: nav,

@@ -78,12 +78,28 @@
       </div>
       <button id="autoAddCond" class="btn small ghost">＋ 添加条件</button>
 
+      <div class="cond-head">定投（定时定额，与 VIX 条件并行生效，仅买入）</div>
+      <div class="auto-grid dca-grid">
+        <label class="chk"><input type="checkbox" id="dcaEnabled" /> 启用定投</label>
+        <label>频率<select id="dcaFreq">
+          <option value="month">每月1日</option>
+          <option value="week">每周一</option>
+          <option value="ndays">每N交易日</option>
+        </select></label>
+        <label id="dcaNWrap" style="display:none">间隔(交易日)<input type="number" id="dcaN" value="5" min="1" /></label>
+        <label>每期金额<input type="number" id="dcaAmount" value="2000" step="100" min="0" /></label>
+        <label>单位<select id="dcaUnit">
+          <option value="cash">元</option>
+          <option value="layer">层仓</option>
+        </select></label>
+      </div>
+
       <div class="import-row">
         <button id="autoRun" class="btn primary">生成并运行自动交易</button>
         <button id="autoAdd" class="btn small ghost">追加到当前策略</button>
         <span id="autoStatus" class="status"></span>
       </div>
-      <p class="hint">规则：<b>突破触发</b>——只在 VIX <b>穿越</b>阈值的当日成交一次（恐慌买一次 / 平静卖一次）。<b>持续区间触发</b>——每个满足条件（VIX 高于买入阈值 / 低于卖出阈值）的<b>交易日都成交</b>（持续定投/补仓/减仓，可能较频繁）。同方向多条条件命中按「最高买 / 最低卖」取一条；现金不足则跳过该笔。买卖金额可按「元」或「份额」设定。</p>
+      <p class="hint">规则：<b>突破触发</b>——只在 VIX <b>穿越</b>阈值的当日成交一次（恐慌买一次 / 平静卖一次）。<b>持续区间触发</b>——每个满足条件（VIX 高于买入阈值 / 低于卖出阈值）的<b>交易日都成交</b>（持续补仓/减仓，可能较频繁）。同方向多条条件命中按「最高买 / 最低卖」取一条；现金不足则跳过该笔。买卖金额单位——<b>元</b>=固定金额；<b>层仓</b>=N 层即 N×10% 的当前现金（买）/ 当前持仓（卖）。可叠加「定投」做定时定额。</p>
     </div>
   </section>
 
@@ -159,21 +175,21 @@
       </div>
     </section>
 
-    <!-- 智能分析 -->
-    <section class="card">
-      <h3>智能分析 <span class="hint" style="font-weight:400">（基于当前查看日 <span id="analysisDate"></span>）</span></h3>
-      <div id="analysisWrap" class="analysis"></div>
-    </section>
-
     <!-- 交易盈亏明细 -->
     <section class="card">
       <h3>每笔交易盈亏明细 <span class="hint" style="font-weight:400">（卖出显示已实现盈亏；买入显示截至「查看日」的浮动盈亏，标<span class="tag-float">浮</span>，随查看日滑块变化）</span></h3>
       <div class="table-wrap">
         <table id="tradeDetailTable" class="tbl">
-          <thead><tr><th>日期</th><th>基金</th><th>方向</th><th>金额/份额</th><th>成交净值</th><th>盈亏</th><th>收益率</th><th>当日VIX</th></tr></thead>
+          <thead><tr><th>日期</th><th>基金</th><th>方向</th><th>金额/层数</th><th>成交净值</th><th>盈亏</th><th>收益率</th><th>当日VIX</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
+    </section>
+
+    <!-- 智能分析 -->
+    <section class="card">
+      <h3>智能分析 <span class="hint" style="font-weight:400">（基于当前查看日 <span id="analysisDate"></span>）</span></h3>
+      <div id="analysisWrap" class="analysis"></div>
     </section>
   </div>
 
