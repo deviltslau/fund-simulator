@@ -78,9 +78,26 @@
       </div>
       <button id="autoAddCond" class="btn small ghost">＋ 添加条件</button>
 
-      <div class="cond-head">定投（定时定额，与 VIX 条件并行生效，仅买入）</div>
-      <div class="auto-grid dca-grid">
-        <label class="chk"><input type="checkbox" id="dcaEnabled" /> 启用定投</label>
+      <div class="import-row">
+        <button id="autoRun" class="btn primary">生成并运行自动交易</button>
+        <button id="autoAdd" class="btn small ghost">追加到当前策略</button>
+        <span id="autoStatus" class="status"></span>
+      </div>
+      <p class="hint">规则：<b>突破触发</b>——只在 VIX <b>穿越</b>阈值的当日成交一次（恐慌买一次 / 平静卖一次）。<b>持续区间触发</b>——每个满足条件（VIX 高于买入阈值 / 低于卖出阈值）的<b>交易日都成交</b>（持续补仓/减仓，可能较频繁）。同方向多条条件命中按「最高买 / 最低卖」取一条；现金不足则跳过该笔。买卖金额单位——<b>元</b>=固定金额；<b>层仓</b>=N 层即 N×10% 的当前现金（买）/ 当前持仓（卖）。可与「定投」功能配合使用。</p>
+    </div>
+  </section>
+
+  <!-- 定投（独立功能，不依赖 VIX 自动交易） -->
+  <section class="card">
+    <div class="card-head">
+      <h3>定投 <span class="hint" style="font-weight:400">（定时定额，独立于 VIX 自动交易，仅买入）</span></h3>
+      <label class="chk"><input type="checkbox" id="dcaEnabled" /> 启用定投</label>
+    </div>
+    <div id="dcaBody" class="auto-body" style="display:none">
+      <div class="auto-grid">
+        <label>目标基金<select id="dcaFund"></select></label>
+        <label>起始日期<input type="date" id="dcaStart" /></label>
+        <label>结束日期<input type="date" id="dcaEnd" /></label>
         <label>频率<select id="dcaFreq">
           <option value="month">每月1日</option>
           <option value="week">每周一</option>
@@ -93,13 +110,12 @@
           <option value="layer">层仓</option>
         </select></label>
       </div>
-
       <div class="import-row">
-        <button id="autoRun" class="btn primary">生成并运行自动交易</button>
-        <button id="autoAdd" class="btn small ghost">追加到当前策略</button>
-        <span id="autoStatus" class="status"></span>
+        <button id="dcaRun" class="btn primary">生成并运行定投</button>
+        <button id="dcaAdd" class="btn small ghost">追加到当前策略</button>
+        <span id="dcaStatus" class="status"></span>
       </div>
-      <p class="hint">规则：<b>突破触发</b>——只在 VIX <b>穿越</b>阈值的当日成交一次（恐慌买一次 / 平静卖一次）。<b>持续区间触发</b>——每个满足条件（VIX 高于买入阈值 / 低于卖出阈值）的<b>交易日都成交</b>（持续补仓/减仓，可能较频繁）。同方向多条条件命中按「最高买 / 最低卖」取一条；现金不足则跳过该笔。买卖金额单位——<b>元</b>=固定金额；<b>层仓</b>=N 层即 N×10% 的当前现金（买）/ 当前持仓（卖）。可叠加「定投」做定时定额。</p>
+      <p class="hint">定投按频率在筛选日期范围内定时买入，与 VIX 自动交易<b>互不影响</b>。单位——<b>元</b>=固定金额；<b>层仓</b>=N 层即 N×10% 当前现金（10 层≈全仓）。</p>
     </div>
   </section>
 
@@ -186,12 +202,13 @@
       </div>
     </section>
 
-    <!-- 智能分析 -->
-    <section class="card">
-      <h3>智能分析 <span class="hint" style="font-weight:400">（基于当前查看日 <span id="analysisDate"></span>）</span></h3>
-      <div id="analysisWrap" class="analysis"></div>
-    </section>
   </div>
+
+  <!-- 智能分析（独立全宽） -->
+  <section class="card">
+    <h3>智能分析 <span class="hint" style="font-weight:400">（基于当前查看日 <span id="analysisDate"></span>）</span></h3>
+    <div id="analysisWrap" class="analysis"></div>
+  </section>
 
   <!-- 多策略对比 -->
   <section class="card">

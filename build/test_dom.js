@@ -146,16 +146,36 @@ try {
   G("autoEnabled")._onchange();
   const status = G("autoStatus").textContent || "";
   console.log("✅ 自动交易 onchange 无异常, status:", status);
-  assert(/笔买入/.test(status), "自动交易已生成交易（默认买>30/卖<20 条件已生效）");
+  assert(/笔交易/.test(status), "自动交易已生成交易（默认买>30/卖<20 条件已生效）");
 } catch (e) { console.error("❌ 自动交易抛错:", e.stack || e); process.exitCode = 1; }
 
-// 边界：所有条件金额为 0 → 被 runAuto 校验拦截（弹 alert，不生成）
+// 边界：所有条件金额为 0 → 被 runVixAuto 校验拦截（弹 alert，不生成）
 try {
   G("autoCondBody").children.forEach(tr => {
     const am = tr.querySelector(".ac-amt"); if (am) am.value = "0";
   });
   G("autoEnabled").checked = true;
   G("autoEnabled")._onchange();
-  console.log("✅ 金额为 0 时未生成交易（由 runAuto 内 alert 拦截）");
+  console.log("✅ 金额为 0 时未生成交易（由 runVixAuto 内 alert 拦截）");
 } catch (e) { console.error("❌ 边界用例抛错:", e.stack || e); process.exitCode = 1; }
+
+// 交互：定投独立运行（不依赖 autoEnabled）
+try {
+  G("dcaFund").value = "513100";
+  G("dcaFreq").value = "month";
+  G("dcaAmount").value = "2000";
+  G("dcaEnabled").checked = true;
+  G("dcaEnabled")._onchange();
+  const dst = G("dcaStatus").textContent || "";
+  console.log("✅ 定投 onchange 无异常, status:", dst);
+  assert(/笔交易/.test(dst), "定投已独立生成交易（无需启用自动交易）");
+} catch (e) { console.error("❌ 定投抛错:", e.stack || e); process.exitCode = 1; }
+
+// 智能分析：策略点评（AI 视角）卡片已渲染且含定性/亮点/风险三栏
+try {
+  const aw = G("analysisWrap").innerHTML || "";
+  assert(/策略点评（AI 视角）/.test(aw), "策略点评卡片已渲染");
+  assert(/风险与改进/.test(aw) && /亮点/.test(aw) && /定性/.test(aw), "策略点评含 定性/亮点/风险与改进 三栏");
+  console.log("✅ 策略点评（AI 视角）渲染正常（含三栏）");
+} catch (e) { console.error("❌ 策略点评渲染失败:", e.stack || e); process.exitCode = 1; }
 

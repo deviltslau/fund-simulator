@@ -79,10 +79,13 @@
     refreshFundSelect();
     refreshFundList();
     populateAutoFund();
+    populateDcaFund();
     seedAutoConds();
-    // 自动交易默认区间 = 全局区间
+    // 自动交易 / 定投 默认区间 = 全局区间
     $("autoStart").value = state.startDate;
     $("autoEnd").value = state.endDate;
+    $("dcaStart").value = state.startDate;
+    $("dcaEnd").value = state.endDate;
     seedStrategies();
 
     // 全局控件初值
@@ -129,6 +132,18 @@
       sel.appendChild(o);
     });
     // 默认优先纳指 ETF（VIX 是美股恐慌指数，最常用于纳指择时）
+    const pref = D.getFund("513100") ? "513100"
+      : (D.listFunds().find(f => !f.isBenchmark) || {}).code;
+    if (pref) sel.value = pref;
+  }
+  function populateDcaFund() {
+    const sel = $("dcaFund");
+    sel.innerHTML = "";
+    D.listFunds().forEach(f => {
+      const o = document.createElement("option");
+      o.value = f.code; o.textContent = `${f.code} ${f.name}`;
+      sel.appendChild(o);
+    });
     const pref = D.getFund("513100") ? "513100"
       : (D.listFunds().find(f => !f.isBenchmark) || {}).code;
     if (pref) sel.value = pref;
@@ -202,7 +217,7 @@
           ? Math.min(c.amount * 0.1 * sharesHeld, sharesHeld)
           : Math.min((c.amount || 0) / nav, sharesHeld);
         if (sellShares > 1e-9) {
-          trades.push({ id: uid(), fundCode: p.fundCode, action: "sell", date: d, amount: c.amount, unit: c.unit, clearAll: false });
+          trades.push({ id: uid(), fundCode: p.fundCode, action: "sell", date: d, amount: c.amount, unit: c.unit, clearAll: false, src: "vix" });
           cash += sellShares * nav * (1 - feeRate);
           sharesHeld -= sellShares;
           sells++;
@@ -224,7 +239,7 @@
           buyShares = (c.amount * (1 - feeRate)) / nav;
         }
         if (okBuy && need <= cash + 1e-6) {
-          trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: c.amount, unit: c.unit, clearAll: false });
+          trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: c.amount, unit: c.unit, clearAll: false, src: "vix" });
           if (isLayer) { cash -= spend; sharesHeld += buyShares; }
           else { cash -= c.amount; sharesHeld += buyShares; }
           buys++;
@@ -242,12 +257,12 @@
           if (u === "layer") {
             const sp = Math.min(amt * 0.1 * cash, cash);
             if (sp > 1e-6 && sp <= cash + 1e-6) {
-              trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: amt, unit: "layer", dca: true, clearAll: false });
+              trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: amt, unit: "layer", dca: true, src: "dca", clearAll: false });
               cash -= sp; sharesHeld += sp * (1 - feeRate) / nav; buys++;
             }
           } else {
             if (amt <= cash + 1e-6) {
-              trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: amt, unit: "cash", dca: true, clearAll: false });
+              trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: amt, unit: "cash", dca: true, src: "dca", clearAll: false });
               cash -= amt; sharesHeld += (amt * (1 - feeRate)) / nav; buys++;
             }
           }
@@ -292,23 +307,17 @@
     };
   }
 
-  // createNew=true：创建/替换一个 VIX 自动策略；false：追加到当前策略
-  function runAuto(createNew) {
-    const p = readAutoParams();
-    if (!p.fundCode) return;
-    if (!p.conditions.length) return alert("请至少添加一条有效条件（需填写 VIX 阈值与金额）。");
-    if (!p.conditions.some(c => c.action === "buy")) return alert("至少需要一条买入条件。");
-    const { trades, log } = generateVixTrades(p);
-    if (!trades.length) { $("autoStatus").textContent = "未生成任何交易：" + log; return; }
+  // 通用：把自动生成的交易落地到策略（按 src 区分，VIX/定投互不覆盖）
+  function applyAutoTrades(trades, name, statusId, createNew, src, p) {
     if (createNew) {
-      const f = D.getFund(p.fundCode);
-      const name = "VIX自动·" + (f ? f.name : p.fundCode);
       let st = state.strategies.find(s => s.name === name);
       if (!st) {
         st = { id: uid(), name, initialCapital: p.initialCapital, feeRate: p.feeRate, trades: [] };
         state.strategies.push(st);
       } else {
-        st.trades = []; st.initialCapital = p.initialCapital; st.feeRate = p.feeRate;
+        // 只替换本来源(src)的交易，保留手动或其它来源
+        st.trades = st.trades.filter(t => t.src !== src);
+        st.initialCapital = p.initialCapital; st.feeRate = p.feeRate;
       }
       trades.forEach(t => st.trades.push(t));
       state.activeId = st.id; state._activeKey = null;
@@ -317,7 +326,51 @@
       trades.forEach(t => st.trades.push(t));
     }
     recomputeAll(); renderAll();
-    $("autoStatus").textContent = (createNew ? "已生成策略：" : "已追加到当前策略：") + log;
+    $(statusId).textContent = (createNew ? "已生成策略：" : "已追加到当前策略：") + `生成 ${trades.length} 笔交易`;
+  }
+
+  // VIX 自动交易（依赖「启用自动交易」开关）
+  function runVixAuto(createNew) {
+    if (!$("autoEnabled").checked) return alert("请先勾选「启用自动交易」。");
+    const p = readAutoParams();
+    p.dca = null; // VIX 运行时不带定投
+    if (!p.fundCode) return;
+    if (!p.conditions.length) return alert("请至少添加一条有效条件（需填写 VIX 阈值与金额）。");
+    if (!p.conditions.some(c => c.action === "buy")) return alert("至少需要一条买入条件。");
+    const f = D.getFund(p.fundCode);
+    const { trades, log } = generateVixTrades(p);
+    if (!trades.length) { $("autoStatus").textContent = "未生成任何交易：" + log; return; }
+    applyAutoTrades(trades, "VIX自动·" + (f ? f.name : p.fundCode), "autoStatus", createNew, "vix", p);
+  }
+
+  // 定投（独立功能，依赖「启用定投」开关，仅买入）
+  function readDcaParams() {
+    const fundCode = $("dcaFund").value;
+    const freq = $("dcaFreq").value;
+    const n = +$("dcaN").value || 0;
+    const amount = +$("dcaAmount").value || 0;
+    const unit = $("dcaUnit").value;
+    if (!(amount > 0)) return null;
+    if (freq === "ndays" && !(n > 0)) return null;
+    return {
+      fundCode,
+      start: $("dcaStart").value || state.startDate,
+      end: $("dcaEnd").value || state.endDate,
+      mode: "cross",
+      initialCapital: Math.max(0, +$("initialCapital").value || 0),
+      feeRate: Math.max(0, (+$("feeRate").value || 0) / 100),
+      conditions: [],
+      dca: { enabled: true, freq, n, amount, unit },
+    };
+  }
+  function runDca(createNew) {
+    if (!$("dcaEnabled").checked) return alert("请先勾选「启用定投」。");
+    const p = readDcaParams();
+    if (!p) return alert("请填写定投的每期金额（>0）。");
+    const f = D.getFund(p.fundCode);
+    const { trades, log } = generateVixTrades(p);
+    if (!trades.length) { $("dcaStatus").textContent = "未生成任何定投交易：" + log; return; }
+    applyAutoTrades(trades, "定投·" + (f ? f.name : p.fundCode), "dcaStatus", createNew, "dca", p);
   }
 
   // ---------- 重算 ----------
@@ -628,12 +681,85 @@
       ["期末现金", money(a.endCash), ""],
     ];
 
+    // 投资建议（综合 VIX 环境 / 现金 / 集中度 / 择时有效性，给出可操作建议）
+    const advList = [];
+    if (v != null) {
+      if (v >= 40) advList.push(["极端恐慌区，若现金充裕建议<strong>分批小额定投 / 加仓</strong>，但务必控仓位、防继续下杀。", "warn"]);
+      else if (v >= 30) advList.push(["处于恐慌区，权益资产性价比高，建议<strong>逢低布局 / 执行定投</strong>，避免一次性重仓。", "good"]);
+      else if (v >= 20) advList.push(["市场平稳，建议<strong>按既定策略持有与定投</strong>即可，不追涨杀跌。", ""]);
+      else advList.push(["低波动平静期，警惕拥挤交易，可适当<strong>获利了结 / 再平衡</strong>。", "warn"]);
+    }
+    if (cashRatio > 0.5) advList.push(["现金占比偏高（" + (cashRatio * 100).toFixed(0) + "%），资金效率偏低，建议<strong>加大投入（定投或择机加仓）</strong>。", "warn"]);
+    else if (cashRatio < 0.05 && codes.length) advList.push(["几乎满仓（现金占比 " + (cashRatio * 100).toFixed(0) + "%），需<strong>留足现金</strong>应对波动与补仓机会。", "warn"]);
+    if (maxWeight > 0.5) advList.push(["单一持仓集中度过高（" + (maxWeight * 100).toFixed(0) + "%），建议<strong>分散或再平衡</strong>以降低风险。", "warn"]);
+    if (lowBuyHighSell) advList.push(["当前策略「低 VIX 买、高 VIX 卖」特征成立，说明<strong>恐慌买入、平静止盈</strong>的纪律有效，建议坚持。", "good"]);
+    else if (vixBuy != null && vixSell != null) advList.push(["当前策略暂未呈现「低买高卖」特征，建议复盘买卖时点，避免<strong>追高杀低</strong>。", "warn"]);
+    if (!advList.length) advList.push(["暂无显著信号，建议保持现有仓位与定投节奏。", ""]);
+    const adviceCard = `<div class="ac-card ac-advice"><div class="ac-title">投资建议</div><ul class="advice-list">` +
+      advList.map(([txt, c]) => `<li class="${c || ""}">${txt}</li>`).join("") + `</ul></div>`;
+
+    // 策略点评（AI 视角）：基于当前策略的实际成交 + 回测，给出定性判断与改进建议
+    const stx = state.strategies.find(s => s.id === state.activeId);
+    const rawT = stx ? stx.trades : [];
+    const vixBuys = rawT.filter(t => t.action === "buy" && t.src === "vix");
+    const dcaBuys = rawT.filter(t => t.action === "buy" && t.dca);
+    const vixSells = rawT.filter(t => t.action === "sell" && t.src === "vix");
+    const hasVix = vixBuys.length > 0 || vixSells.length > 0;
+    const hasDca = dcaBuys.length > 0;
+    const fmtSize = t => t.unit === "layer" ? (t.amount + " 层") : ("¥" + (+t.amount).toLocaleString("zh-CN"));
+    const vAt = d => { const x = D.vixOnOrBefore(d); return x == null ? null : x; };
+    const meanA = arr => arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : null;
+    const vBuy = meanA(vixBuys.map(t => vAt(t.date)).filter(x => x != null));
+    const vSell = meanA(vixSells.map(t => vAt(t.date)).filter(x => x != null));
+    const typeLabel = (hasVix && hasDca) ? "VIX 恐慌择时 + 纪律定投（混合）"
+      : hasVix ? "VIX 恐慌择时策略"
+      : hasDca ? "定期定额（定投）策略" : "手动交易策略";
+
+    let lead;
+    if (hasVix && hasDca) lead = "我怎么看：这是一套「恐慌抄底 + 纪律定投」的组合——平时靠定投平滑成本，市场恐慌（VIX 高）时分批加仓、情绪平复（VIX 低）时减仓。本质是<strong>逆势布局 + 机械定投</strong>的低位吸筹思路。";
+    else if (hasVix) lead = "我怎么看：这是一套纯 VIX 恐慌择时策略——只在市场恐慌（VIX 高于阈值）时买入、平静（VIX 低于阈值）时卖出，靠情绪周期赚估值修复的钱。";
+    else if (hasDca) lead = "我怎么看：这是一套纯定投策略——不预测市场，按固定节奏分批买入，用时间平滑成本、规避择时错误，适合没时间盯盘的人。";
+    else lead = "我怎么看：当前策略以手动交易为主，没有自动 VIX / 定投规则，下面给整体表现与风险提示。";
+
+    const qual = [`类型：<strong>${typeLabel}</strong>`];
+    if (vBuy != null) qual.push(`买点平均 VIX <b class="vix-${vixZone(vBuy)}">${vBuy.toFixed(1)}</b>`);
+    if (vSell != null) qual.push(`卖点平均 VIX <b class="vix-${vixZone(vSell)}">${vSell.toFixed(1)}</b>`);
+    if (vixBuys[0]) qual.push(`VIX 抄底单次：${fmtSize(vixBuys[0])}${vixBuys.length > 1 ? ` ×${vixBuys.length}笔` : ""}`);
+    if (dcaBuys[0]) qual.push(`定投每期：${fmtSize(dcaBuys[0])}${dcaBuys.length > 1 ? ` ×${dcaBuys.length}期` : ""}`);
+
+    const pros = [];
+    if (hasVix) pros.push("逆势布局，利用恐慌情绪低买——历史上恐慌区买入的胜率与赔率通常优于追涨。");
+    if (hasDca) pros.push("定投提供机械纪律，克服「追涨杀跌」的人性弱点，成本被市场波动自然摊平。");
+    if (lowBuyHighSell) pros.push("回测呈现「低 VIX 买、高 VIX 卖」特征，说明择时纪律有效，确实买得相对便宜、卖得相对贵。");
+    if (a.excess != null && a.excess > 0) pros.push(`区间超额收益 <strong>${pct(a.excess)}</strong>，跑赢基准 ${a.benchmark ? a.benchmark.name : "—"}，这套节奏在该样本里是赚钱的。`);
+    else if (a.excess != null && a.excess < 0) pros.push(`区间超额收益 ${pct(a.excess)}，落后基准——这个样本里择时没占到便宜，警惕<strong>过拟合</strong>。`);
+
+    const risks = [];
+    if (vBuy != null && vBuy < 25) risks.push(`买点平均 VIX 仅 <b>${vBuy.toFixed(1)}</b>，阈值可能偏低——容易在「假恐慌」里频繁买入、磨损手续费。建议买阈值 ≥ 25~30，只在真正恐慌时出手。`);
+    if (vSell != null && vSell < 20) risks.push(`卖点平均 VIX <b>${vSell.toFixed(1)}</b>，若牛市延长可能过早清仓踏空。可考虑提高卖阈值，或改为「只减仓不空仓」。`);
+    if (maxWeight > 0.5) risks.push(`单一标的集中度 <b>${(maxWeight * 100).toFixed(0)}%</b> 偏高，黑天鹅下回撤会被放大。建议单标的 ≤ 60%，多配 1~2 只分散。`);
+    if (cashRatio > 0.5) risks.push(`期末现金占比 <b>${(cashRatio * 100).toFixed(0)}%</b> 偏高，资金利用效率低——定投 / 加仓节奏可以更快。`);
+    else if (cashRatio < 0.05 && codes.length) risks.push(`几乎满仓，缺少应对极端下杀的「子弹」，建议常留 ≥ 20% 现金。`);
+    if (a.mdd > 0.3) risks.push(`最大回撤 <b>${pct(-a.mdd)}</b> 较深，下行保护不足。可叠加 VIX 高位减仓，或设定回撤止损线。`);
+    if (hasDca && !hasVix) risks.push(`定投虽稳，但单边下跌市会「越跌越买」放大浮亏。建议定投为主，VIX 抄底作小幅加速器，而非重仓赌恐慌。`);
+    if (!risks.length) risks.push("未见明显风险点，保持现有节奏与再平衡即可。");
+
+    const reviewCard = `<div class="ac-card ac-strategy"><div class="ac-title">策略点评（AI 视角）</div>` +
+      `<p class="ac-lead">${lead}</p>` +
+      `<div class="ac-cols">` +
+        `<div class="ac-col"><div class="ac-sub">定性</div><ul class="ac-bul">${qual.map(x => `<li>${x}</li>`).join("")}</ul></div>` +
+        `<div class="ac-col"><div class="ac-sub pos">亮点</div><ul class="ac-bul pos">${pros.length ? pros.map(x => `<li>${x}</li>`).join("") : "<li>—</li>"}</ul></div>` +
+        `<div class="ac-col"><div class="ac-sub neg">风险与改进</div><ul class="ac-bul neg">${risks.map(x => `<li>${x}</li>`).join("")}</ul></div>` +
+      `</div></div>`;
+
     wrap.innerHTML =
       card("持仓诊断", diagnoseRows) +
       card("VIX 环境判读", zoneRows) +
       card("策略表现", perfRows) +
       card("交易复盘", reviewRows) +
-      card("风险提示", riskRows);
+      card("风险提示", riskRows) +
+      reviewCard +
+      adviceCard;
   }
 
   function renderFundToggles() {
@@ -884,21 +1010,32 @@
       renderVIX();
     };
 
-    // VIX 自动交易
+    // VIX 自动交易（独立开关）
     $("autoEnabled").onchange = () => {
       const on = $("autoEnabled").checked;
       $("autoBody").style.display = on ? "" : "none";
       if (on) {
-        // 同步当前全局区间，确保有默认条件，立即生成一次
         $("autoStart").value = state.startDate;
         $("autoEnd").value = state.endDate;
         seedAutoConds();
-        runAuto(true);
+        runVixAuto(true);
       }
     };
-    $("autoRun").onclick = () => runAuto(true);
-    $("autoAdd").onclick = () => runAuto(false);
+    $("autoRun").onclick = () => runVixAuto(true);
+    $("autoAdd").onclick = () => runVixAuto(false);
     $("autoAddCond").onclick = () => addCondRow();
+    // 定投（独立开关，不依赖自动交易）
+    $("dcaEnabled").onchange = () => {
+      const on = $("dcaEnabled").checked;
+      $("dcaBody").style.display = on ? "" : "none";
+      if (on) {
+        $("dcaStart").value = state.startDate;
+        $("dcaEnd").value = state.endDate;
+        runDca(true);
+      }
+    };
+    $("dcaRun").onclick = () => runDca(true);
+    $("dcaAdd").onclick = () => runDca(false);
     // 定投频率切换：仅「每N交易日」需要填间隔
     $("dcaFreq").onchange = () => { $("dcaNWrap").style.display = $("dcaFreq").value === "ndays" ? "" : "none"; };
 

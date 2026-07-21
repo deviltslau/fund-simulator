@@ -142,7 +142,7 @@ h1{font-size:18px;margin:0} h3{font-size:15px;margin:0 0 12px;font-weight:600}
 .ac-del{padding:2px 7px}
 
 /* 智能分析 */
-.analysis{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:6px}
+.analysis{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:6px}
 .ac-card{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
 .ac-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:7px;padding-bottom:6px;border-bottom:1px dashed var(--line)}
 .ac-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px;padding:3px 0;color:var(--ink2)}
@@ -153,3 +153,26 @@ h1{font-size:18px;margin:0} h3{font-size:15px;margin:0 0 12px;font-weight:600}
 .vix-high{color:#ea580c;font-weight:700}
 .vix-norm{color:#ca8a03}
 .vix-calm{color:#16a34a}
+
+/* 智能分析 · 投资建议（占满整行） */
+.ac-advice{grid-column:1 / -1;background:linear-gradient(180deg,#f8fafc,#f1f5f9)}
+.advice-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.advice-list li{font-size:13px;line-height:1.55;color:var(--ink2);padding-left:14px;position:relative}
+.advice-list li::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.advice-list li.good::before{background:#16a34a}
+.advice-list li.warn::before{background:#ea580c}
+.advice-list li strong{color:var(--ink);font-weight:700}
+
+/* 策略点评（AI 视角）—— 全宽卡片，定性 + 亮点 + 风险与改进 三栏 */
+.ac-strategy{grid-column:1 / -1;background:linear-gradient(180deg,#f0f9ff,#f1f5f9);border-color:#bfdbfe}
+.ac-lead{margin:2px 0 10px;color:var(--ink2);line-height:1.65;font-size:13.5px}
+.ac-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.ac-col .ac-sub{font-size:12.5px;font-weight:700;margin-bottom:5px;color:var(--ink)}
+.ac-col .ac-sub.pos{color:#16a34a}
+.ac-col .ac-sub.neg{color:#ea580c}
+.ac-bul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ac-bul li{font-size:12.5px;line-height:1.5;color:var(--ink2);padding-left:13px;position:relative}
+.ac-bul li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+.ac-bul.pos li::before{background:#16a34a}
+.ac-bul.neg li::before{background:#ea580c}
+.ac-bul li strong{color:var(--ink);font-weight:700}
