@@ -168,12 +168,19 @@
           cash += partial ? p.sellAmount : p.amount;
         }
       }
-      // 买入：空仓且 VIX 突破/高于买入阈值
-      if (!holding) {
-        const trig = p.mode === "cross"
-          ? (prevVix != null && prevVix <= p.buyThresh && v > p.buyThresh)
-          : (v > p.buyThresh);
+      // 买入：VIX 高于买入阈值
+      //  - 突破模式(cross)：仅「空仓 + VIX 上穿阈值当日」买入，恐慌区间只买一次，避免连续加仓
+      //  - 持续模式(cont)：阈值区间内每个交易日都买入（不判持仓，即持续定投/补仓）
+      if (p.mode === "cross") {
+        const trig = (prevVix != null && prevVix <= p.buyThresh && v > p.buyThresh) && !holding;
         if (trig) {
+          if (p.amount > cash) { prevVix = v; continue; } // 现金不足跳过
+          trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: p.amount, clearAll: false });
+          holding = true; buys++;
+          cash -= p.amount;
+        }
+      } else { // 持续区间触发：满足条件的每一天都买
+        if (v > p.buyThresh) {
           if (p.amount > cash) { prevVix = v; continue; } // 现金不足跳过
           trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: p.amount, clearAll: false });
           holding = true; buys++;
