@@ -131,3 +131,24 @@ h1{font-size:18px;margin:0} h3{font-size:15px;margin:0 0 12px;font-weight:600}
 .bar span{display:block;height:100%;background:linear-gradient(90deg,#3b82f6,#22c55e)}
 #holdingsTable tfoot td{background:var(--bg);font-weight:600;border-top:2px solid var(--line)}
 #holdingsTable tbody small{color:var(--ink3);margin-left:4px}
+
+/* VIX 自动交易：分级条件表 */
+.cond-head{font-size:12px;color:var(--ink2);margin:6px 0 4px}
+.cond-tbl{font-size:13px}
+.cond-tbl th,.cond-tbl td{padding:5px 8px;white-space:nowrap}
+.ac-action,.ac-op,.ac-unit{font-size:13px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
+.ac-vix,.ac-amt{width:84px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:#fff;color:var(--ink)}
+.ac-del{padding:2px 7px}
+
+/* 智能分析 */
+.analysis{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:6px}
+.ac-card{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+.ac-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:7px;padding-bottom:6px;border-bottom:1px dashed var(--line)}
+.ac-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px;padding:3px 0;color:var(--ink2)}
+.ac-row b{font-size:14px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.ac-row b.pos{color:var(--pos)}
+.ac-row b.neg{color:var(--neg)}
+.vix-panic{color:#dc2626;font-weight:700}
+.vix-high{color:#ea580c;font-weight:700}
+.vix-norm{color:#ca8a03}
+.vix-calm{color:#16a34a}

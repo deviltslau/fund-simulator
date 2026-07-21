@@ -101,7 +101,9 @@ FS.Charts = (function () {
             const d = p.data || {};
             const tag = d.mtype === "buy" ? "买入" : "卖出";
             const nav = d.nav == null ? "—" : (+d.nav).toFixed(4);
-            return `${d.date}<br/>${tag}　${d.fundName || ""}<br/>成交净值：<b>${nav}</b>`;
+            const amt = d.clearAll ? "清仓" : (d.unit === "shares" ? d.amount + " 份" : "¥" + (+d.amount).toLocaleString("zh-CN"));
+            const unit = d.clearAll ? "" : (d.unit === "shares" ? "份额" : "金额");
+            return `${d.date}<br/>${tag}　${d.fundName || ""}<br/>成交净值：<b>${nav}</b><br/>成交${unit}：<b>${amt}</b>`;
           },
         },
       };
@@ -130,7 +132,8 @@ FS.Charts = (function () {
           const tag = m.type === "buy" ? "买入" : "卖出";
           const color = m.type === "buy" ? "#16a34a" : "#dc2626";
           const nav = m.nav == null ? "—" : (+m.nav).toFixed(4);
-          s += `<span style="color:${color}">▲ ${tag} ${m.fundName || ""} · 净值 ${nav}</span><br/>`;
+          const amt = m.clearAll ? "清仓" : (m.unit === "shares" ? m.amount + " 份" : "¥" + (+m.amount).toLocaleString("zh-CN"));
+          s += `<span style="color:${color}">▲ ${tag} ${m.fundName || ""} · 净值 ${nav} · ${amt}</span><br/>`;
         });
       }
       return s;
@@ -204,16 +207,16 @@ FS.Charts = (function () {
             [{ yAxis: 30, itemStyle: { color: "rgba(239,68,68,0.14)" } }, { yAxis: 200 }],
           ],
         },
-        // 恐慌阈值线 + 自动交易阈值线 + 查看日竖线
+        // 恐慌阈值线 + 自动交易分级阈值线 + 查看日竖线
         markLine: {
           silent: true, symbol: "none",
           data: [
-            ...(cfg.buyThreshold != null ? [{
-              yAxis: cfg.buyThreshold, lineStyle: { color: "#ea580c", type: "dashed", width: 1.6 },
-              label: { formatter: "买入↑ " + cfg.buyThreshold, color: "#c2410c", position: "insideEndTop", fontSize: 10 } }] : []),
-            ...(cfg.sellThreshold != null ? [{
-              yAxis: cfg.sellThreshold, lineStyle: { color: "#059669", type: "dashed", width: 1.6 },
-              label: { formatter: "卖出↓ " + cfg.sellThreshold, color: "#047857", position: "insideEndBottom", fontSize: 10 } }] : []),
+            ...(cfg.buyThresholds || []).map(t => ({
+              yAxis: t, lineStyle: { color: "#ea580c", type: "dashed", width: 1.6 },
+              label: { formatter: "买入↑ " + t, color: "#c2410c", position: "insideEndTop", fontSize: 10 } })),
+            ...(cfg.sellThresholds || []).map(t => ({
+              yAxis: t, lineStyle: { color: "#059669", type: "dashed", width: 1.6 },
+              label: { formatter: "卖出↓ " + t, color: "#047857", position: "insideEndBottom", fontSize: 10 } })),
             { yAxis: 30, lineStyle: { color: "#ef4444", type: "dashed", width: 1.2 },
               label: { formatter: "恐慌线 30", color: "#ef4444", position: "insideEndTop", fontSize: 10 } },
             ...(cfg.viewDate ? [{ xAxis: cfg.viewDate, lineStyle: { color: "#f59e0b", width: 1.5 },

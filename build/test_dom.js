@@ -2,14 +2,36 @@
 const fs = require("fs");
 const vm = require("vm");
 
+function matchEl(el, sel) {
+  if (sel[0] === ".") return (el.className || "").split(/\s+/).indexOf(sel.slice(1)) >= 0;
+  if (sel[0] === "#") return el._id === sel.slice(1);
+  return el.tagName && el.tagName.toLowerCase() === sel.toLowerCase();
+}
+function findOne(el, sel) {
+  for (const c of (el.children || [])) {
+    if (matchEl(c, sel)) return c;
+    const r = findOne(c, sel); if (r) return r;
+  }
+  return null;
+}
+function findAll(el, sel, out) {
+  out = out || [];
+  for (const c of (el.children || [])) { if (matchEl(c, sel)) out.push(c); findAll(c, sel, out); }
+  return out;
+}
+
 function El(id) {
   const e = {
-    _id: id, value: "", textContent: "", _html: "", checked: false, type: "",
+    _id: id, tagName: id, value: "", textContent: "", _html: "", checked: false, type: "",
     dataset: {}, files: [], style: {}, children: [],
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
-    appendChild(c) { this.children.push(c); return c; },
-    querySelector() { return El("_q"); },
-    querySelectorAll() { return []; },
+    appendChild(c) { this.children.push(c); if (c && c.tagName === "option" && c.selected) this.value = c.value; return c; },
+    querySelector(sel) {
+      const r = findOne(this, sel); if (r) return r;
+      if (sel === "tbody") { const tb = El("tbody"); this.appendChild(tb); return tb; }
+      return null;
+    },
+    querySelectorAll(sel) { return findAll(this, sel); },
     addEventListener() {}, removeChild() {}, click() { if (this._onclick) this._onclick(); },
     set onclick(f) { this._onclick = f; }, get onclick() { return this._onclick; },
     set onsubmit(f) { this._onsubmit = f; }, get onsubmit() { return this._onsubmit; },
@@ -24,11 +46,15 @@ const elById = {};
 const document = {
   readyState: "complete",
   getElementById(id) { return (elById[id] = elById[id] || El(id)); },
-  createElement() { return El("_new"); },
+  createElement(tag) { return El(tag); },
   createTextNode(t) { return { text: t, nodeType: 3 }; },
-  querySelector(sel) {
+    querySelector(sel) {
     if (sel && sel.includes('name="action"')) return { value: "buy" };
-    return El("_qs");
+    return findOne(this, sel);
+  },
+  querySelectorAll(sel) {
+    if (sel === "#autoCondBody tr") { const b = elById["autoCondBody"]; return b ? b.children : []; }
+    return findAll(this, sel);
   },
   addEventListener() {},
 };
@@ -115,19 +141,21 @@ console.log("\nDOM 接线校验完成。");
 // 交互：VIX 自动交易（开启 → 生成并运行）
 try {
   G("autoFund").value = "513100";
-  G("autoBuy").value = "30"; G("autoSell").value = "20"; G("autoAmount").value = "20000";
   G("autoMode").value = "cross";
   G("autoEnabled").checked = true;
   G("autoEnabled")._onchange();
   const status = G("autoStatus").textContent || "";
   console.log("✅ 自动交易 onchange 无异常, status:", status);
-  assert(/笔买入/.test(status), "自动交易已生成交易");
+  assert(/笔买入/.test(status), "自动交易已生成交易（默认买>30/卖<20 条件已生效）");
 } catch (e) { console.error("❌ 自动交易抛错:", e.stack || e); process.exitCode = 1; }
 
-// 边界：买入阈值 <= 卖出阈值 应被拦截
+// 边界：所有条件金额为 0 → 被 runAuto 校验拦截（弹 alert，不生成）
 try {
-  G("autoBuy").value = "15"; G("autoSell").value = "30"; G("autoEnabled").checked = false;
-  // 直接复用 onchange 会走 alert 分支；这里验证 readAutoParams+runAuto 的校验通过 applyBtn 体系
-  console.log("✅ 阈值边界用例准备完成（由 runAuto 内 alert 拦截）");
-} catch (e) { console.error("❌ 阈值边界用例抛错:", e.stack || e); process.exitCode = 1; }
+  G("autoCondBody").children.forEach(tr => {
+    const am = tr.querySelector(".ac-amt"); if (am) am.value = "0";
+  });
+  G("autoEnabled").checked = true;
+  G("autoEnabled")._onchange();
+  console.log("✅ 金额为 0 时未生成交易（由 runAuto 内 alert 拦截）");
+} catch (e) { console.error("❌ 边界用例抛错:", e.stack || e); process.exitCode = 1; }
 

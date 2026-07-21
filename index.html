@@ -63,21 +63,27 @@
         <label>目标基金<select id="autoFund"></select></label>
         <label>起始日期<input type="date" id="autoStart" /></label>
         <label>结束日期<input type="date" id="autoEnd" /></label>
-        <label>VIX 买入阈值 &gt;<input type="number" id="autoBuy" value="30" step="1" min="0" /></label>
-        <label>VIX 卖出阈值 &lt;<input type="number" id="autoSell" value="20" step="1" min="0" /></label>
-        <label>每笔买入金额(元)<input type="number" id="autoAmount" value="20000" step="1000" min="0" /></label>
-        <label>每笔卖出金额(元，0=清仓)<input type="number" id="autoSellAmt" value="0" step="1000" min="0" /></label>
         <label>触发方式<select id="autoMode">
           <option value="cross">突破触发（推荐）</option>
           <option value="cont">持续区间触发</option>
         </select></label>
       </div>
+
+      <div class="cond-head">分级条件（同方向多条命中：<b>买入取 VIX 阈值最高</b>的一条，<b>卖出取 VIX 阈值最低</b>的一条）</div>
+      <div class="table-wrap">
+        <table class="tbl cond-tbl">
+          <thead><tr><th>方向</th><th>比较</th><th>VIX 阈值</th><th>金额</th><th>单位</th><th></th></tr></thead>
+          <tbody id="autoCondBody"></tbody>
+        </table>
+      </div>
+      <button id="autoAddCond" class="btn small ghost">＋ 添加条件</button>
+
       <div class="import-row">
         <button id="autoRun" class="btn primary">生成并运行自动交易</button>
         <button id="autoAdd" class="btn small ghost">追加到当前策略</button>
         <span id="autoStatus" class="status"></span>
       </div>
-      <p class="hint">规则：<b>突破触发</b>——仅在 VIX 上穿买入阈值的<b>当日</b>买入一次（且需空仓，避免恐慌区间连续加仓），下穿卖出阈值的当日清仓/部分卖出，构成「恐慌买一次 / 平静卖一次」的振荡。<b>持续区间触发</b>——只要 VIX 位于阈值区间内，<b>每个交易日都成交</b>：高于买入阈值则每日买入（持续定投/补仓），低于卖出阈值则卖出（每日部分卖出或清仓），可能较频繁。买入阈值须大于卖出阈值，否则无法构成有效振荡。</p>
+      <p class="hint">规则：<b>突破触发</b>——只在 VIX <b>穿越</b>阈值的当日成交一次（恐慌买一次 / 平静卖一次）。<b>持续区间触发</b>——每个满足条件（VIX 高于买入阈值 / 低于卖出阈值）的<b>交易日都成交</b>（持续定投/补仓/减仓，可能较频繁）。同方向多条条件命中按「最高买 / 最低卖」取一条；现金不足则跳过该笔。买卖金额可按「元」或「份额」设定。</p>
     </div>
   </section>
 
@@ -151,6 +157,12 @@
           <tfoot><tr id="holdTotalRow"></tr></tfoot>
         </table>
       </div>
+    </section>
+
+    <!-- 智能分析 -->
+    <section class="card">
+      <h3>智能分析 <span class="hint" style="font-weight:400">（基于当前查看日 <span id="analysisDate"></span>）</span></h3>
+      <div id="analysisWrap" class="analysis"></div>
     </section>
 
     <!-- 交易盈亏明细 -->

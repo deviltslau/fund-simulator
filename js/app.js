@@ -79,6 +79,7 @@
     refreshFundSelect();
     refreshFundList();
     populateAutoFund();
+    seedAutoConds();
     // 自动交易默认区间 = 全局区间
     $("autoStart").value = state.startDate;
     $("autoEnd").value = state.endDate;
@@ -133,58 +134,88 @@
     if (pref) sel.value = pref;
   }
 
-  // ---------- VIX 自动交易生成 ----------
-  // p: {fundCode,start,end,buyThresh,sellThresh,amount,mode,initialCapital,feeRate}
-  // 返回 {trades:[{id,fundCode,action,date,amount,clearAll}], log, buys, sells}
+  // 自动交易：添加一条分级条件行
+  function addCondRow(init) {
+    const tr = document.createElement("tr");
+    const sel = (cls, def, items) => {
+      const s = document.createElement("select");
+      s.className = cls;
+      items.forEach(([val, txt]) => { const o = document.createElement("option"); o.value = val; o.textContent = txt; if (val === def) o.selected = true; s.appendChild(o); });
+      return s;
+    };
+    const cell = n => { const td = document.createElement("td"); td.appendChild(n); return td; };
+    tr.appendChild(cell(sel("ac-action", (init && init.action) || "buy", [["buy", "买入"], ["sell", "卖出"]])));
+    tr.appendChild(cell(sel("ac-op", (init && init.op) || ">", [[">", "> 高于"], ["<", "< 低于"]])));
+    const vi = document.createElement("input"); vi.type = "number"; vi.className = "ac-vix"; vi.value = (init && init.vix != null) ? init.vix : 30; vi.step = "1"; vi.min = "0"; tr.appendChild(cell(vi));
+    const am = document.createElement("input"); am.type = "number"; am.className = "ac-amt"; am.value = (init && init.amount) ? init.amount : 20000; am.step = "1000"; am.min = "0"; tr.appendChild(cell(am));
+    tr.appendChild(cell(sel("ac-unit", (init && init.unit) || "cash", [["cash", "元"], ["shares", "份额"]])));
+    const del = document.createElement("button"); del.type = "button"; del.className = "btn tiny ac-del"; del.textContent = "✕"; del.onclick = () => tr.remove();
+    tr.appendChild(cell(del));
+    $("autoCondBody").appendChild(tr);
+  }
+  // 首次进入自动交易面板时，预置两条默认条件（买 VIX>30 / 卖 VIX<20，各 20000 元）
+  function seedAutoConds() {
+    const body = $("autoCondBody");
+    if (body.children.length) return;
+    addCondRow({ action: "buy", op: ">", vix: 30, amount: 20000, unit: "cash" });
+    addCondRow({ action: "sell", op: "<", vix: 20, amount: 20000, unit: "cash" });
+  }
+
+  // ---------- VIX 自动交易生成（分级条件）----------
+  // p: {fundCode,start,end,mode,initialCapital,feeRate,
+  //     conditions:[{action:'buy'|'sell',op:'>'|'<',vix:Number,amount:Number,unit:'cash'|'shares'}]}
+  // 每天先卖后买；同方向多条命中只取一条：买入取 VIX 阈值最高的，卖出取最低的。
+  // 突破模式：仅在 VIX 穿越阈值的「当日」触发一次；持续模式：每个满足条件的交易日都触发（对称）。
+  // 返回 {trades:[{id,fundCode,action,date,amount,unit,clearAll:false}], log, buys, sells}
   function generateVixTrades(p) {
     const f = D.getFund(p.fundCode);
     if (!f) return { trades: [], log: "基金不存在" };
     const dates = D.unionDates([p.fundCode], p.start, p.end);
     if (!dates.length) return { trades: [], log: "该区间无交易日" };
     const feeRate = p.feeRate || 0;
-    let cash = p.initialCapital || 0;     // 仅用于在生成阶段避免「无现金却买入」的失真
-    let prevVix = null, holding = false;
+    let cash = p.initialCapital || 0;   // 仅用于在生成阶段避免「无现金却买入」的失真
+    let sharesHeld = 0;                // 模拟持仓份额（持续模式卖出判定用）
+    let prevVix = null;
     let buys = 0, sells = 0;
     const trades = [];
+    const hits = (c, v, prev, mode) => {
+      const hit = c.op === ">" ? v > c.vix : v < c.vix;
+      if (!hit) return false;
+      if (mode !== "cross") return true;                 // 持续：满足条件即触发
+      return c.op === ">"                                      // 突破：仅在穿越阈值当日
+        ? (prev != null && prev <= c.vix && v > c.vix)
+        : (prev != null && prev >= c.vix && v < c.vix);
+    };
     for (const d of dates) {
       const v = D.vixOnOrBefore(d);
       const nav = D.navOnOrBefore(f, d);
       if (v == null || nav == null) { prevVix = v; continue; }
 
-      // 卖出：持仓中且 VIX 跌破卖出阈值（突破=下穿当日；持续=只要低于阈值）
-      if (holding) {
-        const trig = p.mode === "cross"
-          ? (prevVix != null && prevVix >= p.sellThresh && v < p.sellThresh)
-          : (v < p.sellThresh);
-        if (trig) {
-          const partial = p.sellAmount > 0;
-          // 部分卖出：按金额卖出（保留底仓）；否则清仓
-          trades.push({
-            id: uid(), fundCode: p.fundCode, action: "sell", date: d,
-            amount: partial ? p.sellAmount : 0, clearAll: !partial,
-          });
-          holding = false; sells++;
-          // 回收现金（近似）：部分卖出≈卖出金额；清仓≈买入时投入（忽略盈亏，仅用于避免「无现金却买入」失真）
-          cash += partial ? p.sellAmount : p.amount;
+      // —— 先卖后买（腾出资金）——
+      // 卖出：取所有命中卖条件中 VIX 阈值最低的一条（只要仍持股）
+      const sellHits = p.conditions.filter(c => c.action === "sell" && hits(c, v, prevVix, p.mode));
+      if (sharesHeld > 1e-9 && sellHits.length) {
+        const c = sellHits.reduce((a, b) => (b.vix < a.vix ? b : a));
+        const isShares = c.unit === "shares";
+        const sellShares = isShares ? Math.min(c.amount, sharesHeld) : Math.min((c.amount || 0) / nav, sharesHeld);
+        if (sellShares > 1e-9) {
+          trades.push({ id: uid(), fundCode: p.fundCode, action: "sell", date: d, amount: c.amount, unit: c.unit, clearAll: false });
+          cash += sellShares * nav * (1 - feeRate);
+          sharesHeld -= sellShares;
+          sells++;
         }
       }
-      // 买入：VIX 高于买入阈值
-      //  - 突破模式(cross)：仅「空仓 + VIX 上穿阈值当日」买入，恐慌区间只买一次，避免连续加仓
-      //  - 持续模式(cont)：阈值区间内每个交易日都买入（不判持仓，即持续定投/补仓）
-      if (p.mode === "cross") {
-        const trig = (prevVix != null && prevVix <= p.buyThresh && v > p.buyThresh) && !holding;
-        if (trig) {
-          if (p.amount > cash) { prevVix = v; continue; } // 现金不足跳过
-          trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: p.amount, clearAll: false });
-          holding = true; buys++;
-          cash -= p.amount;
-        }
-      } else { // 持续区间触发：满足条件的每一天都买
-        if (v > p.buyThresh) {
-          if (p.amount > cash) { prevVix = v; continue; } // 现金不足跳过
-          trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: p.amount, clearAll: false });
-          holding = true; buys++;
-          cash -= p.amount;
+      // 买入：取所有命中买条件中 VIX 阈值最高的一条
+      const buyHits = p.conditions.filter(c => c.action === "buy" && hits(c, v, prevVix, p.mode));
+      if (buyHits.length) {
+        const c = buyHits.reduce((a, b) => (b.vix > a.vix ? b : a));
+        const isShares = c.unit === "shares";
+        const need = isShares ? c.amount * nav * (1 + feeRate) : c.amount;
+        if (need <= cash + 1e-6) {
+          trades.push({ id: uid(), fundCode: p.fundCode, action: "buy", date: d, amount: c.amount, unit: c.unit, clearAll: false });
+          if (isShares) { sharesHeld += c.amount; cash -= c.amount * nav * (1 + feeRate); }
+          else { sharesHeld += (c.amount * (1 - feeRate)) / nav; cash -= c.amount; }
+          buys++;
         }
       }
       prevVix = v;
@@ -194,17 +225,24 @@
   }
 
   function readAutoParams() {
+    const conditions = [];
+    document.querySelectorAll("#autoCondBody tr").forEach(tr => {
+      const action = tr.querySelector(".ac-action").value;
+      const op = tr.querySelector(".ac-op").value;
+      const vix = +tr.querySelector(".ac-vix").value;
+      const amount = +tr.querySelector(".ac-amt").value || 0;
+      const unit = tr.querySelector(".ac-unit").value;
+      if (!action || !op || !(vix >= 0) || amount <= 0) return; // 跳过未填完的行
+      conditions.push({ action, op, vix, amount, unit });
+    });
     return {
       fundCode: $("autoFund").value,
       start: $("autoStart").value || state.startDate,
       end: $("autoEnd").value || state.endDate,
-      buyThresh: +$("autoBuy").value,
-      sellThresh: +$("autoSell").value,
-      amount: +$("autoAmount").value || 0,
-      sellAmount: +$("autoSellAmt").value || 0,
       mode: $("autoMode").value,
       initialCapital: Math.max(0, +$("initialCapital").value || 0),
       feeRate: Math.max(0, (+$("feeRate").value || 0) / 100),
+      conditions,
     };
   }
 
@@ -212,8 +250,8 @@
   function runAuto(createNew) {
     const p = readAutoParams();
     if (!p.fundCode) return;
-    if (!(p.buyThresh > p.sellThresh)) return alert("买入阈值需大于卖出阈值，才能构成「恐慌买入 / 平静卖出」的振荡。");
-    if (p.amount <= 0) return alert("每笔买入金额需大于 0");
+    if (!p.conditions.length) return alert("请至少添加一条有效条件（需填写 VIX 阈值与金额）。");
+    if (!p.conditions.some(c => c.action === "buy")) return alert("至少需要一条买入条件。");
     const { trades, log } = generateVixTrades(p);
     if (!trades.length) { $("autoStatus").textContent = "未生成任何交易：" + log; return; }
     if (createNew) {
@@ -275,6 +313,7 @@
     renderTradeList();
     renderTradeDetail();
     renderHoldings();
+    renderAnalysis();
     renderMain();
     renderVIX();
     renderCompare();
@@ -362,9 +401,9 @@
     if (!a || a.empty || !a.tradeDetail.length) { tb.innerHTML = `<tr><td colspan="8" class="hint">暂无交易</td></tr>`; return; }
     a.tradeDetail.forEach(t => {
       const tr = document.createElement("tr");
-      const amt = t.action === "sell"
-        ? (t.clearAll ? "清仓(全部)" : money(t.amount))
-        : money(t.amount);
+      const amt = t.action === "sell" && t.clearAll
+        ? "清仓(全部)"
+        : (t.unit === "shares" ? num(t.amount, 2) + " 份" : money(t.amount));
 
       // 盈亏与收益率：
       //  - 卖出：已实现盈亏（来自引擎）
@@ -377,8 +416,9 @@
         const f = D.getFund(t.fundCode);
         const navView = f && state.viewDate >= t.date ? D.navOnOrBefore(f, state.viewDate) : null;
         if (navView != null) {
-          const net = (+t.amount || 0) * (1 - feeRate); // 扣费后净投入
-          const shares = net / t.price;
+          let shares, net;
+          if (t.unit === "shares") { shares = +t.amount || 0; net = shares * t.price; }
+          else { net = (+t.amount || 0) * (1 - feeRate); shares = net / t.price; }
           const floatPnl = shares * navView - net;
           const floatPct = navView / t.price - 1;
           rpCls = cls(floatPnl);
@@ -457,6 +497,97 @@
       `<div class="hsum"><span class="hl">当日盈亏</span><b class="${cls(totDay)}">${money(totDay)}</b></div>` +
       `<div class="hsum"><span class="hl">累计浮动盈亏</span><b class="${cls(totPnl)}">${money(totPnl)}</b></div>` +
       `<div class="hsum"><span class="hl">总收益率</span><b class="${cls(totPct)}">${pct(totPct)}</b></div>`;
+  }
+
+  // 某组交易的「平均 VIX」（用于交易复盘：低买高卖）
+  function meanVix(list) {
+    let s = 0, n = 0;
+    list.forEach(t => { const v = D.vixOnOrBefore(t.date); if (v != null) { s += v; n++; } });
+    return n ? s / n : null;
+  }
+
+  // 智能分析板块（基于当前查看日）
+  function renderAnalysis() {
+    const eng = state.activeEngine, a = state.activeAnalytics;
+    const wrap = $("analysisWrap");
+    if (!eng || !a || a.empty) { wrap.innerHTML = "<p class='hint'>暂无数据</p>"; return; }
+    $("analysisDate").textContent = state.viewDate;
+    const idx = eng.dates.indexOf(state.viewDate);
+    const snap = (eng.positionsByDate[state.viewDate]) || {};
+    const codes = Object.keys(snap);
+    let totMv = 0, totPnl = 0, totCost = 0;
+    codes.forEach(code => { const p = snap[code]; totMv += p.mv; totPnl += p.pnl; totCost += p.costValue; });
+    const cash = eng.cash[idx] || 0;
+    const totalAssets = cash + totMv;
+    const cashRatio = totalAssets > 1e-9 ? cash / totalAssets : 0;
+    let maxWeight = 0;
+    codes.forEach(code => { const p = snap[code]; const w = totMv > 1e-9 ? p.mv / totMv : 0; if (w > maxWeight) maxWeight = w; });
+    const tw = (eng.twrr && eng.twrr[idx] != null) ? eng.twrr[idx] / 100 - 1 : 0;
+
+    // VIX 环境判读
+    const v = D.vixOnOrBefore(state.viewDate);
+    let zone = "—", zoneCls = "", advice = "无 VIX 数据";
+    if (v != null) {
+      if (v >= 40) { zone = "极度恐慌"; zoneCls = "panic"; advice = "历史极端区，若现金充裕可分批加仓，但需控仓位、防继续下杀。"; }
+      else if (v >= 30) { zone = "恐慌"; zoneCls = "high"; advice = "恐慌区，权益资产性价比高，可逢低布局，避免一把梭。"; }
+      else if (v >= 20) { zone = "正常"; zoneCls = "norm"; advice = "市场平稳，按既定策略持有 / 定投即可。"; }
+      else { zone = "平静"; zoneCls = "calm"; advice = "低波动环境，可适度获利了结或再平衡，警惕拥挤交易。"; }
+    }
+
+    // 策略表现
+    const buys = a.tradeDetail.filter(t => t.action === "buy").length;
+    const sells = a.tradeDetail.filter(t => t.action === "sell").length;
+    const closed = a.tradeDetail.filter(t => t.action === "sell" && t.realized != null);
+    const win = closed.filter(t => t.realized > 0).length;
+    const winRate = closed.length ? win / closed.length : 0;
+
+    // 交易复盘
+    const vixBuy = meanVix(a.tradeDetail.filter(t => t.action === "buy"));
+    const vixSell = meanVix(a.tradeDetail.filter(t => t.action === "sell"));
+    const lowBuyHighSell = (vixBuy != null && vixSell != null && vixBuy > vixSell);
+
+    const card = (title, rows) =>
+      `<div class="ac-card"><div class="ac-title">${title}</div>${rows.map(r =>
+        `<div class="ac-row"><span>${r[0]}</span><b class="${r[2] || ""}">${r[1]}</b></div>`).join("")}</div>`;
+
+    const diagnoseRows = [
+      ["查看日总资产", money(totalAssets), ""],
+      ["持仓市值", money(totMv), ""],
+      ["现金", money(cash), ""],
+      ["现金占比", pct(cashRatio), cashRatio > 0.5 ? "neg" : ""],
+      ["累计浮动盈亏", money(totPnl), cls(totPnl)],
+      ["组合收益率(TWRR)", pct(tw), cls(tw)],
+      ["最大单一持仓", (maxWeight * 100).toFixed(1) + "%", maxWeight > 0.5 ? "neg" : (maxWeight > 0.3 ? "" : "")],
+    ];
+    const zoneRows = [
+      ["查看日 VIX", v == null ? "—" : v.toFixed(1), "vix-" + zoneCls],
+      ["环境判定", zone, "vix-" + zoneCls],
+      ["配置建议", advice, ""],
+    ];
+    const perfRows = [
+      ["区间收益", pct(a.intervalReturn), cls(a.intervalReturn)],
+      ["年化", pct(a.annualized), cls(a.annualized)],
+      ["最大回撤", pct(-a.mdd), "neg"],
+      ["买卖笔数", buys + " 买 / " + sells + " 卖", ""],
+      ["近似胜率", closed.length ? pct(winRate) : "—", cls(winRate)],
+    ];
+    const reviewRows = [
+      ["买点平均 VIX", vixBuy == null ? "—" : vixBuy.toFixed(1), "vix-" + vixZone(vixBuy)],
+      ["卖点平均 VIX", vixSell == null ? "—" : vixSell.toFixed(1), "vix-" + vixZone(vixSell)],
+      ["低买高卖?", lowBuyHighSell ? "是 ✓" : (vixBuy != null && vixSell != null ? "否 ✗" : "—"), lowBuyHighSell ? "pos" : ""],
+    ];
+    const riskRows = [
+      ["集中度(最大持仓)", (maxWeight * 100).toFixed(1) + "%", maxWeight > 0.5 ? "neg" : ""],
+      ["现金闲置率", pct(cashRatio), cashRatio > 0.5 ? "neg" : ""],
+      ["期末现金", money(a.endCash), ""],
+    ];
+
+    wrap.innerHTML =
+      card("持仓诊断", diagnoseRows) +
+      card("VIX 环境判读", zoneRows) +
+      card("策略表现", perfRows) +
+      card("交易复盘", reviewRows) +
+      card("风险提示", riskRows);
   }
 
   function renderFundToggles() {
@@ -542,7 +673,7 @@
         if (idx < 0) return;
         markers.push({
           date: dates[idx], value: portfolio[idx], type: t.action,
-          nav: t.price, fundName: t.fundName, amount: t.amount, clearAll: t.clearAll,
+          nav: t.price, fundName: t.fundName, amount: t.amount, unit: t.unit, clearAll: t.clearAll,
         });
       });
     }
@@ -560,10 +691,18 @@
     const eng = state.activeEngine;
     const dates = eng.dates;
     const vix = dates.map(d => D.vixOnOrBefore(d));
-    // 启用自动交易时，把买卖阈值线传给图表，便于对照条件
-    const buyT = $("autoEnabled").checked ? (+$("autoBuy").value || null) : null;
-    const sellT = $("autoEnabled").checked ? (+$("autoSell").value || null) : null;
-    return { dates, vix, viewDate: state.viewDate, buyThreshold: buyT, sellThreshold: sellT };
+    // 启用自动交易时，把各条件的 VIX 阈值线传给图表，便于对照
+    let buyThresholds = [], sellThresholds = [];
+    if ($("autoEnabled").checked) {
+      document.querySelectorAll("#autoCondBody tr").forEach(tr => {
+        const action = tr.querySelector(".ac-action").value;
+        const v = +tr.querySelector(".ac-vix").value;
+        if (!(v > 0)) return;
+        if (action === "buy") buyThresholds.push(v);
+        else if (action === "sell") sellThresholds.push(v);
+      });
+    }
+    return { dates, vix, viewDate: state.viewDate, buyThresholds, sellThresholds };
   }
   function renderVIX() {
     if (!$("vixToggle").checked || !state.activeEngine || !state.activeEngine.dates.length) return;
@@ -704,14 +843,16 @@
       const on = $("autoEnabled").checked;
       $("autoBody").style.display = on ? "" : "none";
       if (on) {
-        // 同步当前全局区间，立即生成一次
+        // 同步当前全局区间，确保有默认条件，立即生成一次
         $("autoStart").value = state.startDate;
         $("autoEnd").value = state.endDate;
+        seedAutoConds();
         runAuto(true);
       }
     };
     $("autoRun").onclick = () => runAuto(true);
     $("autoAdd").onclick = () => runAuto(false);
+    $("autoAddCond").onclick = () => addCondRow();
 
     // CSV 导入
     $("impBtn").onclick = () => {
