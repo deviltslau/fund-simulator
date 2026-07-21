@@ -1,0 +1,122 @@
+:root{
+  --bg:#f1f5f9; --card:#ffffff; --line:#e2e8f0; --line2:#eef2f7;
+  --ink:#0f172a; --ink2:#475569; --ink3:#94a3b8;
+  --accent:#2563eb; --accent-d:#1d4ed8; --accent-bg:#eff6ff;
+  --pos:#dc2626;   /* 涨/盈利 红 */
+  --neg:#16a34a;   /* 跌/亏损 绿 */
+  --warn:#b45309;
+  --radius:14px; --shadow:0 1px 3px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.05);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+h1{font-size:18px;margin:0} h3{font-size:15px;margin:0 0 12px;font-weight:600}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 22px;background:var(--card);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{font-size:26px}
+.sub{margin:2px 0 0;color:var(--ink2);font-size:12px}
+.data-note{font-size:12px;color:var(--warn);background:#fffbeb;border:1px solid #fde68a;padding:6px 10px;border-radius:8px;max-width:520px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;margin:16px 22px}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.card-head h3{margin:0}
+.controls{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end}
+.ctrl{display:flex;flex-direction:column;gap:4px}
+.ctrl label{font-size:12px;color:var(--ink2)}
+.ctrl input,.ctrl select{padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff;color:var(--ink)}
+.ctrl-actions{display:flex;gap:8px;margin-left:auto}
+
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;cursor:pointer;transition:.15s}
+.btn:hover{background:var(--accent-d)}
+.btn.ghost{background:#fff;color:var(--accent)}
+.btn.ghost:hover{background:var(--accent-bg)}
+.btn.small{padding:5px 10px;font-size:12px}
+.btn.tiny{padding:3px 8px;font-size:12px;border-color:var(--line);background:#fff;color:var(--ink2)}
+.btn.tiny:hover{background:var(--accent-bg);color:var(--accent);border-color:var(--accent)}
+
+/* 策略标签 */
+.strategy-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;flex:1}
+.tab{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 8px 5px 12px;cursor:pointer;font-size:13px;color:var(--ink2)}
+.tab.active{background:var(--accent-bg);border-color:var(--accent);color:var(--accent-d);font-weight:600}
+.tab-x{border:none;background:transparent;cursor:pointer;color:var(--ink3);font-size:12px;padding:0 2px}
+.tab-x:hover{color:var(--pos)}
+
+.grid-2col{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:0 22px}
+.grid-2col .card{margin:0 0 16px}
+.grid-2col .card:first-child{margin-right:8px}
+.grid-2col .card:last-child{margin-left:8px}
+@media(max-width:980px){.grid-2col{grid-template-columns:1fr}.grid-2col .card{margin:0 22px 16px!important}}
+
+/* 交易表单 */
+.trade-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.trade-form select,.trade-form input[type=date],.trade-form input[type=number]{padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff}
+.seg{display:inline-flex;gap:10px;align-items:center}
+.chk{display:inline-flex;gap:4px;align-items:center;font-size:13px;color:var(--ink2)}
+.toggles{display:flex;flex-wrap:wrap;gap:10px}
+
+/* 表 */
+.table-wrap{overflow:auto;max-height:340px}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{position:sticky;top:0;background:#f8fafc;text-align:left;color:var(--ink2);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{padding:7px 10px;border-bottom:1px solid var(--line2);white-space:nowrap}
+.tbl tr:hover td{background:#f8fafc}
+.pos{color:var(--pos)!important}
+.neg{color:var(--neg)!important}
+
+/* 指标卡 */
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.metric{background:#f8fafc;border:1px solid var(--line2);border-radius:10px;padding:10px 12px}
+.metric .mv{font-size:20px;font-weight:700}
+.metric .ml{font-size:12px;color:var(--ink2);margin-top:2px}
+.tag{font-size:12px;color:var(--accent);background:var(--accent-bg);padding:2px 8px;border-radius:6px;font-weight:600}
+
+/* 图表 */
+.chart{width:100%;height:380px}
+
+/* 查看日 */
+.view-date{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.view-date input[type=range]{flex:1}
+.view-date strong{color:var(--warn);font-variant-numeric:tabular-nums}
+
+.hint{font-size:12px;color:var(--ink3);margin:6px 0 0}
+
+/* 数据管理 */
+.import-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.import-row input[type=text],.import-row input[type=date]{padding:6px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+.status{font-size:12px;color:var(--ink2)}
+.fetch-box{margin:6px 0;border:1px dashed var(--line);border-radius:8px;padding:8px 10px}
+.fetch-box summary{cursor:pointer;color:var(--ink2);font-size:13px}
+.fund-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{font-size:12px;background:#f1f5f9;border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--ink2)}
+.chip.bench{border-color:var(--accent);color:var(--accent-d);background:var(--accent-bg)}
+.auto-body{margin-top:6px}
+.auto-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 14px;margin-bottom:10px}
+.auto-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink2)}
+.auto-grid select,.auto-grid input{padding:6px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff}
+
+.foot{text-align:center;color:var(--ink3);font-size:12px;padding:20px}
+
+/* 主图卡片右侧：开关 + 基金开关 */
+.head-right{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.head-right .toggles{margin:0}
+
+/* VIX 子图 */
+#vixWrap{margin-top:6px}
+.chart-sm{width:100%;height:180px}
+
+/* 交易区 VIX 择时读数 */
+.vix-ref{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.vix-readout{font-size:12px;font-weight:600;color:var(--ink2);background:#f1f5f9;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-variant-numeric:tabular-nums}
+.vix-readout.calm{color:#15803d;background:#f0fdf4;border-color:#bbf7d0}   /* 平静 绿 */
+.vix-readout.norm{color:#a16207;background:#fefce8;border-color:#fde68a}   /* 正常 黄 */
+.vix-readout.high{color:#c2410c;background:#fff7ed;border-color:#fed7aa}   /* 偏高 橙 */
+.vix-readout.panic{color:#b91c1c;background:#fef2f2;border-color:#fecaca} /* 恐慌 红 */
+
+/* 交易明细表内 VIX 单元格 */
+.vix-cell{font-weight:600;font-variant-numeric:tabular-nums;padding:1px 6px;border-radius:6px}
+.vix-cell.calm{color:#15803d;background:#f0fdf4}
+.vix-cell.norm{color:#a16207;background:#fefce8}
+.vix-cell.high{color:#c2410c;background:#fff7ed}
+.vix-cell.panic{color:#b91c1c;background:#fef2f2}
+.tag-float{display:inline-block;font-size:10px;font-weight:600;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:5px;padding:0 4px;margin-left:2px;vertical-align:middle}

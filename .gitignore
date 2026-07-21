@@ -1,0 +1,9 @@
+# 构建中间产物（抓取的原始净值/VIX 缓存，可由 build/gen_sample.py 重新生成）
+build/tmp/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
