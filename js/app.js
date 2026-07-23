@@ -13,6 +13,54 @@
   const vixZone = v => (v == null ? "" : v < 15 ? "calm" : v < 25 ? "norm" : v < 30 ? "high" : "panic");
   const uid = () => "t" + Math.random().toString(36).slice(2, 9);
 
+  // 指标数字滚动动画（无 requestAnimationFrame / 测试桩时直接定值）
+  function countUp(el) {
+    const raw = el.textContent;
+    if (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (typeof window === "undefined" || !window.requestAnimationFrame) return;
+    const m = raw.match(/([\d.,]+)/);
+    if (!m) return;
+    const prefix = raw.slice(0, m.index);
+    const numStr = m[1].replace(/,/g, "");
+    const suffix = raw.slice(m.index + m[1].length);
+    const target = parseFloat(numStr);
+    if (isNaN(target)) return;
+    const dur = 650, t0 = Date.now();
+    (function step() {
+      const k = Math.min(1, (Date.now() - t0) / dur);
+      const e = 1 - Math.pow(1 - k, 3);
+      el.textContent = prefix + (target * e).toLocaleString("zh-CN", { maximumFractionDigits: 2 }) + suffix;
+      if (k < 1) window.requestAnimationFrame(step);
+      else el.textContent = raw;
+    })();
+  }
+
+  // 内联 sparkline（资产曲线），纯 SVG，无额外 canvas / 依赖
+  function sparkSVG(series, opts) {
+    opts = opts || {};
+    const w = opts.w || 260, h = opts.h || 60, pad = 4;
+    if (!series || !series.length) return "";
+    const vals = series.filter(v => typeof v === "number" && Number.isFinite(v));
+    if (vals.length < 2) return "";
+    const min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    const span = (max - min) || 1, n = vals.length;
+    const X = i => pad + (i / (n - 1)) * (w - pad * 2);
+    const Y = v => pad + (1 - (v - min) / span) * (h - pad * 2);
+    let d = "";
+    vals.forEach((v, i) => { d += (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1) + " "; });
+    const area = d + "L" + X(n - 1).toFixed(1) + " " + (h - pad).toFixed(1) + " L" + X(0).toFixed(1) + " " + (h - pad).toFixed(1) + " Z";
+    const up = vals[n - 1] >= vals[0];
+    const col = up ? "var(--pos)" : "var(--neg)";
+    const gid = "spk" + uid();
+    return '<svg class="spark" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+      '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="' + col + '" stop-opacity=".22"/>' +
+      '<stop offset="1" stop-color="' + col + '" stop-opacity="0"/></linearGradient></defs>' +
+      '<path d="' + area + '" fill="url(#' + gid + ')"/>' +
+      '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<circle cx="' + X(n - 1).toFixed(1) + '" cy="' + Y(vals[n - 1]).toFixed(1) + '" r="2.4" fill="' + col + '"/></svg>';
+  }
+
   // ---------- 状态 ----------
   const state = {
     startDate: "", endDate: "", benchmarkCode: "",
@@ -452,21 +500,33 @@
   function renderMetrics() {
     const a = state.activeAnalytics;
     const wrap = $("metricCards");
-    if (!a || a.empty) { wrap.innerHTML = "<p class='hint'>暂无数据</p>"; return; }
-    const cards = [
-      { l: "区间收益率", v: pct(a.intervalReturn), c: cls(a.intervalReturn) },
-      { l: "年化收益率", v: pct(a.annualized), c: cls(a.annualized) },
-      { l: "最大回撤", v: pct(-a.mdd), c: "neg" },
-      { l: "回撤持续", v: a.mddDuration + " 天", c: "" },
+    if (!a || a.empty) { wrap.innerHTML = `<div class="empty">暂无数据，添加交易或运行自动策略后查看</div>`; return; }
+    const eng = state.activeEngine;
+    const hero = o =>
+      `<div class="m-hero${o.primary ? " m-primary" : ""}">
+         <div class="m-label">${o.label}</div>
+         <div class="m-value ${o.cls || ""}"><span class="m-arrow">${o.dir >= 0 ? "▲" : "▼"}</span><span class="mv">${o.value}</span></div>
+         ${o.sub ? `<div class="m-sub">${o.sub}</div>` : ""}
+       </div>`;
+    const spark = (eng && eng.equity) ? sparkSVG(eng.equity, { w: 260, h: 60 }) : "";
+    const heroes =
+      hero({ label: "区间收益率", value: pct(a.intervalReturn), dir: a.intervalReturn, primary: true, sub: `年化 <b class="mv">${pct(a.annualized)}</b>` }) +
+      hero({ label: "最大回撤", value: pct(-a.mdd), cls: "neg", dir: -1 }) +
+      hero({ label: "超额收益", value: pct(a.excess), cls: cls(a.excess), dir: a.excess });
+    const top = `<div class="m-top"><div class="m-heroes">${heroes}</div>` +
+      (spark ? `<div class="m-spark">${spark}<div class="m-spark-cap">资产曲线 · 期末 ¥${num(a.endAssets)}</div></div>` : "") + `</div>`;
+    const chips = [
       { l: "基准收益(" + (a.benchmark ? a.benchmark.name : "—") + ")", v: pct(a.bmInterval), c: cls(a.bmInterval) },
-      { l: "超额收益", v: pct(a.excess), c: cls(a.excess) },
       { l: "期末总资产", v: money(a.endAssets), c: "" },
       { l: "期末现金", v: money(a.endCash), c: "" },
       { l: "已实现盈亏", v: money(a.realizedTotal), c: cls(a.realizedTotal) },
+      { l: "回撤持续", v: a.mddDuration + " 天", c: "" },
       { l: "区间天数", v: a.days + " 天", c: "" },
     ];
-    wrap.innerHTML = cards.map(c =>
-      `<div class="metric ${c.c}"><div class="mv">${c.v}</div><div class="ml">${c.l}</div></div>`).join("");
+    wrap.innerHTML = top + `<div class="metric-grid">` +
+      chips.map(c => `<div class="m-chip${c.c ? " " + c.c : ""}"><div class="m-chip-v mv">${c.v}</div><div class="m-chip-l">${c.l}</div></div>`).join("") +
+      `</div>`;
+    wrap.querySelectorAll(".mv").forEach(el => countUp(el));
   }
 
   function renderTradeList() {
@@ -497,7 +557,7 @@
     const feeRate = st ? st.feeRate : 0;
     const tb = $("tradeDetailTable").querySelector("tbody");
     tb.innerHTML = "";
-    if (!a || a.empty || !a.tradeDetail.length) { tb.innerHTML = `<tr><td colspan="8" class="hint">暂无交易</td></tr>`; return; }
+    if (!a || a.empty || !a.tradeDetail.length) { tb.innerHTML = `<tr><td colspan="8" class="empty">暂无交易，请在「交易录入」添加或运行自动策略</td></tr>`; return; }
     a.tradeDetail.forEach(t => {
       const tr = document.createElement("tr");
       const amtRaw = (t.action === "sell" && t.clearAll)
@@ -553,7 +613,7 @@
     const snap = (eng && eng.positionsByDate[state.viewDate]) || {};
     const codes = Object.keys(snap);
     if (!codes.length) {
-      tb.innerHTML = `<tr><td colspan="9" class="hint">查看日(${state.viewDate}) 无持仓</td></tr>`;
+      tb.innerHTML = `<tr><td colspan="9" class="empty">查看日（${state.viewDate}）无持仓</td></tr>`;
       foot.innerHTML = ""; $("holdSummary").innerHTML = "";
       return;
     }
@@ -609,7 +669,7 @@
   function renderAnalysis() {
     const eng = state.activeEngine, a = state.activeAnalytics;
     const wrap = $("analysisWrap");
-    if (!eng || !a || a.empty) { wrap.innerHTML = "<p class='hint'>暂无数据</p>"; return; }
+    if (!eng || !a || a.empty) { wrap.innerHTML = `<div class="empty">暂无数据，添加交易或运行自动策略后查看</div>`; return; }
     $("analysisDate").textContent = state.viewDate;
     const idx = eng.dates.indexOf(state.viewDate);
     const snap = (eng.positionsByDate[state.viewDate]) || {};
@@ -646,8 +706,9 @@
     const lowBuyHighSell = (vixBuy != null && vixSell != null && vixBuy > vixSell);
 
     const card = (title, rows) =>
-      `<div class="ac-card"><div class="ac-title">${title}</div>${rows.map(r =>
-        `<div class="ac-row"><span>${r[0]}</span><b class="${r[2] || ""}">${r[1]}</b></div>`).join("")}</div>`;
+      `<div class="ac-card"><div class="ac-title">${title}</div><div class="ac-rows">` +
+      rows.map(r => `<div class="ac-row"><span class="ac-k">${r[0]}</span><b class="ac-v ${r[2] || ""}">${r[1]}</b></div>`).join("") +
+      `</div></div>`;
 
     const diagnoseRows = [
       ["查看日总资产", money(totalAssets), ""],
@@ -752,9 +813,16 @@
         `<div class="ac-col"><div class="ac-sub neg">风险与改进</div><ul class="ac-bul neg">${risks.map(x => `<li>${x}</li>`).join("")}</ul></div>` +
       `</div></div>`;
 
+    const envBand = `<div class="ac-env vix-${zoneCls}">
+      <div class="ac-env-main">
+        <div class="ac-env-zone"><span class="ac-env-label">查看日 VIX 环境</span><span class="ac-env-val">${v == null ? "无数据" : v.toFixed(1) + " · " + zone}</span></div>
+        <div class="ac-env-advice">${advice}</div>
+      </div>
+      <div class="ac-env-vix">${v == null ? "—" : v.toFixed(1)}</div>
+    </div>`;
     wrap.innerHTML =
+      envBand +
       card("持仓诊断", diagnoseRows) +
-      card("VIX 环境判读", zoneRows) +
       card("策略表现", perfRows) +
       card("交易复盘", reviewRows) +
       card("风险提示", riskRows) +
@@ -820,6 +888,23 @@
     if (best) { $("tradeDate").value = best; updateTradeVix(); }
   }
 
+  // 点击主图买卖点 → 跳转到该交易日的查看视图（联动持仓/明细/主图/VIX）
+  window.FS.setViewDate = function (d) {
+    if (!d) return;
+    const eng = state.activeEngine;
+    if (!eng || !eng.dates.length) return;
+    if (d < state.startDate) d = state.startDate;
+    if (d > state.endDate) d = state.endDate;
+    state.viewDate = d;
+    const idx = eng.dates.indexOf(d);
+    if (idx < 0) return;
+    const slider = $("viewSlider");
+    if (slider) slider.value = idx;
+    $("viewDateLabel").textContent = d;
+    $("holdDate").value = d;
+    renderHoldings(); renderTradeDetail(); renderMain(); renderVIX(); updateViewVix();
+  };
+
   function buildMainData() {
     const eng = state.activeEngine, a = state.activeAnalytics;
     const dates = eng.dates;
@@ -849,7 +934,9 @@
         });
       });
     }
-    return { dates, portfolio, benchmark, funds, markers, viewDate: state.viewDate };
+    const vixByDate = {};
+    dates.forEach(d => { const v = D.vixOnOrBefore(d); if (v != null) vixByDate[d] = v; });
+    return { dates, portfolio, benchmark, funds, markers, viewDate: state.viewDate, vixByDate };
   }
 
   function renderMain() {
@@ -895,8 +982,9 @@
     let benchmark = null;
     const beng = state.activeEngine.benchmark;
     if (beng) benchmark = { name: beng.name, data: beng.equity.map(v => v / beng.equity[0] * 100) };
-    if (!compareChart) compareChart = C.renderCompare($("compareChart"), { dates, strategs: strs, benchmark });
-    else { compareChart.clear(); C.renderCompare($("compareChart"), { dates, strategs: strs, benchmark }); }
+    const activeName = state.strategies.find(s => s.id === state.activeId).name;
+    if (!compareChart) compareChart = C.renderCompare($("compareChart"), { dates, strategs: strs, benchmark, activeName });
+    else { compareChart.clear(); C.renderCompare($("compareChart"), { dates, strategs: strs, benchmark, activeName }); }
 
     // 对比表
     const cols = [

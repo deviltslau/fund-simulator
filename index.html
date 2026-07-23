@@ -9,246 +9,301 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">💰</span>
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="28" height="28">
+          <defs>
+            <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#4338ca"/><stop offset="1" stop-color="#0d9488"/>
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="28" height="28" rx="8" fill="url(#lg)"/>
+          <path d="M9 21 L14 14 L18 18 L23 10" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="23" cy="10" r="2.4" fill="#fff"/>
+        </svg>
+      </span>
       <div>
         <h1>基金模拟盘 · 投资复盘</h1>
         <p class="sub">可回溯日期的基金组合模拟与多策略对比</p>
       </div>
     </div>
+    <nav class="topnav" aria-label="区块导航">
+      <a href="#sec-config" class="active">配置</a>
+      <a href="#sec-build">策略构建</a>
+      <a href="#sec-review">复盘</a>
+      <a href="#sec-viz">可视化</a>
+      <a href="#sec-analysis">智能分析</a>
+      <a href="#sec-data">数据</a>
+    </nav>
     <div id="dataNote" class="data-note"></div>
   </header>
 
-  <!-- 全局参数 -->
-  <section class="card controls">
-    <div class="ctrl">
-      <label>回溯起点</label>
-      <input type="date" id="startDate" />
-    </div>
-    <div class="ctrl">
-      <label>回溯终点</label>
-      <input type="date" id="endDate" />
-    </div>
-    <div class="ctrl">
-      <label>期初资金(元)</label>
-      <input type="number" id="initialCapital" step="1000" min="0" />
-    </div>
-    <div class="ctrl">
-      <label>费率(%)</label>
-      <input type="number" id="feeRate" step="0.01" min="0" />
-    </div>
-    <div class="ctrl">
-      <label>对比基准</label>
-      <select id="benchmarkSelect"></select>
-    </div>
-    <div class="ctrl-actions">
-      <button id="applyBtn" class="btn primary">应用 / 重算</button>
-      <button id="resetBtn" class="btn ghost">重置示例</button>
-    </div>
-  </section>
+  <main class="page">
 
-  <!-- 策略标签 -->
-  <section class="card strategy-bar">
-    <div id="strategyTabs" class="tabs"></div>
-    <button id="addStrategyBtn" class="btn small">＋ 新建策略</button>
-  </section>
-
-  <!-- VIX 自动交易 -->
-  <section class="card">
-    <div class="card-head">
-      <h3>VIX 自动交易策略 <span class="hint" style="font-weight:400">（开启后，按 VIX 阈值在筛选日期范围内自动生成买/卖交易）</span></h3>
-      <label class="chk"><input type="checkbox" id="autoEnabled" /> 启用自动交易</label>
-    </div>
-    <div id="autoBody" class="auto-body" style="display:none">
-      <div class="auto-grid">
-        <label>目标基金<select id="autoFund"></select></label>
-        <label>起始日期<input type="date" id="autoStart" /></label>
-        <label>结束日期<input type="date" id="autoEnd" /></label>
-        <label>触发方式<select id="autoMode">
-          <option value="cross">突破触发（推荐）</option>
-          <option value="cont">持续区间触发</option>
-        </select></label>
+    <!-- 01 配置 -->
+    <section class="sec" id="sec-config">
+      <div class="sec-head">
+        <span class="sec-no">01</span>
+        <div><h2>配置</h2><p>设置回溯区间、期初资金与对比基准，并管理你的策略</p></div>
       </div>
 
-      <div class="cond-head">分级条件（同方向多条命中：<b>买入取 VIX 阈值最高</b>的一条，<b>卖出取 VIX 阈值最低</b>的一条）</div>
-      <div class="table-wrap">
-        <table class="tbl cond-tbl">
-          <thead><tr><th>方向</th><th>比较</th><th>VIX 阈值</th><th>金额</th><th>单位</th><th></th></tr></thead>
-          <tbody id="autoCondBody"></tbody>
-        </table>
-      </div>
-      <button id="autoAddCond" class="btn small ghost">＋ 添加条件</button>
-
-      <div class="import-row">
-        <button id="autoRun" class="btn primary">生成并运行自动交易</button>
-        <button id="autoAdd" class="btn small ghost">追加到当前策略</button>
-        <span id="autoStatus" class="status"></span>
-      </div>
-      <p class="hint">规则：<b>突破触发</b>——只在 VIX <b>穿越</b>阈值的当日成交一次（恐慌买一次 / 平静卖一次）。<b>持续区间触发</b>——每个满足条件（VIX 高于买入阈值 / 低于卖出阈值）的<b>交易日都成交</b>（持续补仓/减仓，可能较频繁）。同方向多条条件命中按「最高买 / 最低卖」取一条；现金不足则跳过该笔。买卖金额单位——<b>元</b>=固定金额；<b>层仓</b>=N 层即 N×10% 的当前现金（买）/ 当前持仓（卖）。可与「定投」功能配合使用。</p>
-    </div>
-  </section>
-
-  <!-- 定投（独立功能，不依赖 VIX 自动交易） -->
-  <section class="card">
-    <div class="card-head">
-      <h3>定投 <span class="hint" style="font-weight:400">（定时定额，独立于 VIX 自动交易，仅买入）</span></h3>
-      <label class="chk"><input type="checkbox" id="dcaEnabled" /> 启用定投</label>
-    </div>
-    <div id="dcaBody" class="auto-body" style="display:none">
-      <div class="auto-grid">
-        <label>目标基金<select id="dcaFund"></select></label>
-        <label>起始日期<input type="date" id="dcaStart" /></label>
-        <label>结束日期<input type="date" id="dcaEnd" /></label>
-        <label>频率<select id="dcaFreq">
-          <option value="month">每月1日</option>
-          <option value="week">每周一</option>
-          <option value="ndays">每N交易日</option>
-        </select></label>
-        <label id="dcaNWrap" style="display:none">间隔(交易日)<input type="number" id="dcaN" value="5" min="1" /></label>
-        <label>每期金额<input type="number" id="dcaAmount" value="2000" step="100" min="0" /></label>
-        <label>单位<select id="dcaUnit">
-          <option value="cash">元</option>
-          <option value="layer">层仓</option>
-        </select></label>
-      </div>
-      <div class="import-row">
-        <button id="dcaRun" class="btn primary">生成并运行定投</button>
-        <button id="dcaAdd" class="btn small ghost">追加到当前策略</button>
-        <span id="dcaStatus" class="status"></span>
-      </div>
-      <p class="hint">定投按频率在筛选日期范围内定时买入，与 VIX 自动交易<b>互不影响</b>。单位——<b>元</b>=固定金额；<b>层仓</b>=N 层即 N×10% 当前现金（10 层≈全仓）。</p>
-    </div>
-  </section>
-
-  <div class="grid-2col">
-    <!-- 交易录入 -->
-    <section class="card">
-      <h3>交易录入</h3>
-      <form id="tradeForm" class="trade-form">
-        <select id="tradeFund"></select>
-        <div class="seg">
-          <label><input type="radio" name="action" value="buy" checked /> 买入</label>
-          <label><input type="radio" name="action" value="sell" /> 卖出</label>
+      <section class="card controls">
+        <div class="ctrl">
+          <label>回溯起点</label>
+          <input type="date" id="startDate" />
         </div>
-        <input type="date" id="tradeDate" title="交易日期" />
-        <div class="vix-ref">
-          <span id="tradeVix" class="vix-readout">VIX —</span>
-          <button type="button" id="panicBtn" class="btn tiny ghost" title="把窗口内 VIX 最高的恐慌日填入交易日期">填入最恐慌日</button>
+        <div class="ctrl">
+          <label>回溯终点</label>
+          <input type="date" id="endDate" />
         </div>
-        <input type="number" id="tradeAmount" placeholder="金额(元)" step="100" min="0" />
-        <label class="chk"><input type="checkbox" id="tradeClearAll" /> 清仓(卖全部)</label>
-        <button type="submit" class="btn primary">添加交易</button>
-      </form>
-      <div class="table-wrap">
-        <table id="tradeList" class="tbl">
-          <thead><tr><th>日期</th><th>基金</th><th>方向</th><th>金额</th><th>清仓</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+        <div class="ctrl">
+          <label>期初资金(元)</label>
+          <input type="number" id="initialCapital" step="1000" min="0" />
+        </div>
+        <div class="ctrl">
+          <label>费率(%)</label>
+          <input type="number" id="feeRate" step="0.01" min="0" />
+        </div>
+        <div class="ctrl">
+          <label>对比基准</label>
+          <select id="benchmarkSelect"></select>
+        </div>
+        <div class="ctrl-actions">
+          <button id="applyBtn" class="btn primary">应用 / 重算</button>
+          <button id="resetBtn" class="btn ghost">重置示例</button>
+        </div>
+      </section>
+
+      <section class="card strategy-bar">
+        <div id="strategyTabs" class="tabs"></div>
+        <button id="addStrategyBtn" class="btn small">＋ 新建策略</button>
+      </section>
     </section>
 
-    <!-- 复盘指标 -->
-    <section class="card">
-      <h3>复盘指标 <span id="activeTag" class="tag"></span></h3>
-      <div id="metricCards" class="metric-grid"></div>
+    <!-- 02 策略构建 -->
+    <section class="sec" id="sec-build">
+      <div class="sec-head">
+        <span class="sec-no">02</span>
+        <div><h2>策略构建</h2><p>用 VIX 自动交易、定投与手动录入，搭建你的买卖规则</p></div>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <h3>VIX 自动交易策略 <span class="hint" style="font-weight:400">（开启后，按 VIX 阈值在筛选日期范围内自动生成买/卖交易）</span></h3>
+          <label class="chk"><input type="checkbox" id="autoEnabled" /> 启用自动交易</label>
+        </div>
+        <div id="autoBody" class="auto-body" style="display:none">
+          <div class="auto-grid">
+            <label>目标基金<select id="autoFund"></select></label>
+            <label>起始日期<input type="date" id="autoStart" /></label>
+            <label>结束日期<input type="date" id="autoEnd" /></label>
+            <label>触发方式<select id="autoMode">
+              <option value="cross">突破触发（推荐）</option>
+              <option value="cont">持续区间触发</option>
+            </select></label>
+          </div>
+
+          <div class="cond-head">分级条件（同方向多条命中：<b>买入取 VIX 阈值最高</b>的一条，<b>卖出取 VIX 阈值最低</b>的一条）</div>
+          <div class="table-wrap">
+            <table class="tbl cond-tbl">
+              <thead><tr><th>方向</th><th>比较</th><th>VIX 阈值</th><th>金额</th><th>单位</th><th></th></tr></thead>
+              <tbody id="autoCondBody"></tbody>
+            </table>
+          </div>
+          <button id="autoAddCond" class="btn small ghost">＋ 添加条件</button>
+
+          <div class="import-row">
+            <button id="autoRun" class="btn primary">生成并运行自动交易</button>
+            <button id="autoAdd" class="btn small ghost">追加到当前策略</button>
+            <span id="autoStatus" class="status"></span>
+          </div>
+          <p class="hint">规则：<b>突破触发</b>——只在 VIX <b>穿越</b>阈值的当日成交一次（恐慌买一次 / 平静卖一次）。<b>持续区间触发</b>——每个满足条件（VIX 高于买入阈值 / 低于卖出阈值）的<b>交易日都成交</b>（持续补仓/减仓，可能较频繁）。同方向多条条件命中按「最高买 / 最低卖」取一条；现金不足则跳过该笔。买卖金额单位——<b>元</b>=固定金额；<b>层仓</b>=N 层即 N×10% 的当前现金（买）/ 当前持仓（卖）。可与「定投」功能配合使用。</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h3>定投 <span class="hint" style="font-weight:400">（定时定额，独立于 VIX 自动交易，仅买入）</span></h3>
+          <label class="chk"><input type="checkbox" id="dcaEnabled" /> 启用定投</label>
+        </div>
+        <div id="dcaBody" class="auto-body" style="display:none">
+          <div class="auto-grid">
+            <label>目标基金<select id="dcaFund"></select></label>
+            <label>起始日期<input type="date" id="dcaStart" /></label>
+            <label>结束日期<input type="date" id="dcaEnd" /></label>
+            <label>频率<select id="dcaFreq">
+              <option value="month">每月1日</option>
+              <option value="week">每周一</option>
+              <option value="ndays">每N交易日</option>
+            </select></label>
+            <label id="dcaNWrap" style="display:none">间隔(交易日)<input type="number" id="dcaN" value="5" min="1" /></label>
+            <label>每期金额<input type="number" id="dcaAmount" value="2000" step="100" min="0" /></label>
+            <label>单位<select id="dcaUnit">
+              <option value="cash">元</option>
+              <option value="layer">层仓</option>
+            </select></label>
+          </div>
+          <div class="import-row">
+            <button id="dcaRun" class="btn primary">生成并运行定投</button>
+            <button id="dcaAdd" class="btn small ghost">追加到当前策略</button>
+            <span id="dcaStatus" class="status"></span>
+          </div>
+          <p class="hint">定投按频率在筛选日期范围内定时买入，与 VIX 自动交易<b>互不影响</b>。单位——<b>元</b>=固定金额；<b>层仓</b>=N 层即 N×10% 当前现金（10 层≈全仓）。</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>交易录入</h3>
+        <form id="tradeForm" class="trade-form">
+          <select id="tradeFund"></select>
+          <div class="seg">
+            <label><input type="radio" name="action" value="buy" checked /> 买入</label>
+            <label><input type="radio" name="action" value="sell" /> 卖出</label>
+          </div>
+          <input type="date" id="tradeDate" title="交易日期" />
+          <div class="vix-ref">
+            <span id="tradeVix" class="vix-readout">VIX —</span>
+            <button type="button" id="panicBtn" class="btn tiny ghost" title="把窗口内 VIX 最高的恐慌日填入交易日期">填入最恐慌日</button>
+          </div>
+          <input type="number" id="tradeAmount" placeholder="金额(元)" step="100" min="0" />
+          <label class="chk"><input type="checkbox" id="tradeClearAll" /> 清仓(卖全部)</label>
+          <button type="submit" class="btn primary">添加交易</button>
+        </form>
+        <div class="table-wrap">
+          <table id="tradeList" class="tbl">
+            <thead><tr><th>日期</th><th>基金</th><th>方向</th><th>金额</th><th>清仓</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
     </section>
-  </div>
 
-  <!-- 主图 + VIX -->
-  <section class="card">
-    <div class="card-head">
-      <h3>净值 / 组合走势（归一化，起点 = 100）</h3>
-      <div class="head-right">
-        <label class="chk"><input type="checkbox" id="vixToggle" checked /> 显示 VIX 恐慌指数（CBOE 真实）</label>
-        <div id="fundToggles" class="toggles"></div>
+    <!-- 03 复盘 -->
+    <section class="sec" id="sec-review">
+      <div class="sec-head">
+        <span class="sec-no">03</span>
+        <div><h2>复盘</h2><p>核心指标、持仓快照与每笔交易盈亏明细</p></div>
       </div>
-    </div>
-    <div id="mainChart" class="chart"></div>
-    <p class="hint">▲ 绿点 = 买入　▼ 红点 = 卖出（悬停/看标签可见成交净值）　橙色竖线 = 当前回溯查看日。「我的组合」为时间加权收益指数（起点=100，仅反映已投入资金表现，不受闲置现金稀释）。</p>
-    <div id="vixWrap">
-      <div id="vixChart" class="chart chart-sm"></div>
-      <p class="hint">绿带=平静　黄带=正常　橙带=偏高　红带=恐慌　虚线=恐慌阈值 30　可直接参考 VIX 在恐慌区买入纳指基金</p>
-    </div>
-  </section>
 
-  <div class="grid-2col">
-    <!-- 持仓快照 -->
-    <section class="card">
-      <h3>持仓快照 <span class="hint" style="font-weight:400">（选择任意日期，查看当日持仓与盈亏）</span></h3>
-      <div class="view-date">
-        <span>查看日期</span>
-        <input type="date" id="holdDate" class="hold-date" />
-        <input type="range" id="viewSlider" />
-        <strong id="viewDateLabel"></strong>
-        <span id="viewVix" class="vix-readout"></span>
+      <div class="grid-2col">
+        <section class="card">
+          <h3>复盘指标 <span id="activeTag" class="tag"></span></h3>
+          <div id="metricCards"></div>
+        </section>
+
+        <section class="card">
+          <h3>持仓快照 <span class="hint" style="font-weight:400">（选择任意日期，查看当日持仓与盈亏）</span></h3>
+          <div class="view-date">
+            <span>查看日期</span>
+            <input type="date" id="holdDate" class="hold-date" />
+            <input type="range" id="viewSlider" />
+            <strong id="viewDateLabel"></strong>
+            <span id="viewVix" class="vix-readout"></span>
+          </div>
+          <div id="holdSummary" class="hold-summary"></div>
+          <div class="table-wrap">
+            <table id="holdingsTable" class="tbl">
+              <thead><tr><th>基金</th><th>份额</th><th>成本价</th><th>查看日净值</th><th>当日盈亏</th><th>市值</th><th>占比</th><th>浮动盈亏</th><th>盈亏%</th></tr></thead>
+              <tbody></tbody>
+              <tfoot><tr id="holdTotalRow"></tr></tfoot>
+            </table>
+          </div>
+        </section>
       </div>
-      <div id="holdSummary" class="hold-summary"></div>
-      <div class="table-wrap">
-        <table id="holdingsTable" class="tbl">
-          <thead><tr><th>基金</th><th>份额</th><th>成本价</th><th>查看日净值</th><th>当日盈亏</th><th>市值</th><th>占比</th><th>浮动盈亏</th><th>盈亏%</th></tr></thead>
-          <tbody></tbody>
-          <tfoot><tr id="holdTotalRow"></tr></tfoot>
-        </table>
-      </div>
+
+      <section class="card">
+        <h3>每笔交易盈亏明细 <span class="hint" style="font-weight:400">（卖出显示已实现盈亏；买入显示截至「查看日」的浮动盈亏，标<span class="tag-float">浮</span>，随查看日滑块变化）</span></h3>
+        <div class="table-wrap">
+          <table id="tradeDetailTable" class="tbl">
+            <thead><tr><th>日期</th><th>基金</th><th>方向</th><th>金额/层数</th><th>成交净值</th><th>盈亏</th><th>收益率</th><th>当日VIX</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
     </section>
 
-    <!-- 交易盈亏明细 -->
-    <section class="card">
-      <h3>每笔交易盈亏明细 <span class="hint" style="font-weight:400">（卖出显示已实现盈亏；买入显示截至「查看日」的浮动盈亏，标<span class="tag-float">浮</span>，随查看日滑块变化）</span></h3>
-      <div class="table-wrap">
-        <table id="tradeDetailTable" class="tbl">
-          <thead><tr><th>日期</th><th>基金</th><th>方向</th><th>金额/层数</th><th>成交净值</th><th>盈亏</th><th>收益率</th><th>当日VIX</th></tr></thead>
-          <tbody></tbody>
-        </table>
+    <!-- 04 可视化 -->
+    <section class="sec" id="sec-viz">
+      <div class="sec-head">
+        <span class="sec-no">04</span>
+        <div><h2>可视化</h2><p>查看净值走势、VIX 恐慌区间与多策略横向对比</p></div>
       </div>
+
+      <section class="card">
+        <div class="card-head">
+          <h3>净值 / 组合走势（归一化，起点 = 100）</h3>
+          <div class="head-right">
+            <label class="chk"><input type="checkbox" id="vixToggle" checked /> 显示 VIX 恐慌指数（CBOE 真实）</label>
+            <div id="fundToggles" class="toggles"></div>
+          </div>
+        </div>
+        <div id="mainChart" class="chart"></div>
+        <p class="hint">▲ 绿点 = 买入　▼ 红点 = 卖出（悬停/看标签可见成交净值）　橙色竖线 = 当前回溯查看日。「我的组合」为时间加权收益指数（起点=100，仅反映已投入资金表现，不受闲置现金稀释）。</p>
+        <div id="vixWrap">
+          <div id="vixChart" class="chart chart-sm"></div>
+          <p class="hint">绿带=平静　黄带=正常　橙带=偏高　红带=恐慌　虚线=恐慌阈值 30　可直接参考 VIX 在恐慌区买入纳指基金</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>多策略横向对比</h3>
+        <div id="compareTableWrap" class="table-wrap"></div>
+        <div id="compareChart" class="chart"></div>
+      </section>
     </section>
 
-  </div>
-
-  <!-- 智能分析（独立全宽） -->
-  <section class="card">
-    <h3>智能分析 <span class="hint" style="font-weight:400">（基于当前查看日 <span id="analysisDate"></span>）</span></h3>
-    <div id="analysisWrap" class="analysis"></div>
-  </section>
-
-  <!-- 多策略对比 -->
-  <section class="card">
-    <h3>多策略横向对比</h3>
-    <div id="compareTableWrap" class="table-wrap"></div>
-    <div id="compareChart" class="chart"></div>
-  </section>
-
-  <!-- 数据管理 -->
-  <section class="card">
-    <div class="card-head">
-      <h3>基金数据管理</h3>
-    </div>
-    <p class="hint">内置样例为统计模拟生成、已锚定真实最新净值，仅用于演示。实盘复盘请导入你的真实净值 CSV（列：日期, 净值，支持中文表头）。</p>
-    <div class="import-row">
-      <input type="text" id="impName" placeholder="基金名称" />
-      <input type="text" id="impCode" placeholder="代码(如 110011)" />
-      <label class="chk"><input type="checkbox" id="impBench" /> 设为基准</label>
-      <input type="file" id="impFile" accept=".csv,.txt" />
-      <button id="impBtn" class="btn small">导入 CSV</button>
-      <span id="impStatus" class="status"></span>
-    </div>
-    <details class="fetch-box">
-      <summary>在线抓取（实验性 · 受浏览器跨域限制，失败请用 CSV）</summary>
-      <div class="import-row">
-        <input type="text" id="fetchCode" placeholder="代码" />
-        <input type="date" id="fetchStart" />
-        <input type="date" id="fetchEnd" />
-        <button id="fetchBtn" class="btn small">抓取净值</button>
-        <span id="fetchStatus" class="status"></span>
+    <!-- 05 智能分析 -->
+    <section class="sec" id="sec-analysis">
+      <div class="sec-head">
+        <span class="sec-no">05</span>
+        <div><h2>智能分析</h2><p>基于当前查看日的诊断、点评与投资建议</p></div>
       </div>
-    </details>
-    <div id="fundList" class="fund-list"></div>
-    <div class="import-row" style="margin-top:10px">
-      <button id="exportBtn" class="btn small ghost">导出当前策略 JSON</button>
-      <input type="file" id="importStrategyFile" accept=".json" />
-    </div>
-  </section>
 
-  <footer class="foot">本地静态工具 · 数据均在浏览器内处理，不上传 · 净值来源可来自天天基金/东方财富</footer>
+      <section class="card">
+        <h3>智能分析 <span class="hint" style="font-weight:400">（基于当前查看日 <span id="analysisDate"></span>）</span></h3>
+        <div id="analysisWrap" class="analysis"></div>
+      </section>
+    </section>
+
+    <!-- 06 数据管理 -->
+    <section class="sec" id="sec-data">
+      <div class="sec-head">
+        <span class="sec-no">06</span>
+        <div><h2>数据管理</h2><p>导入真实净值 CSV 或在线抓取，导出当前策略</p></div>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <h3>基金数据管理</h3>
+        </div>
+        <p class="hint">内置样例为统计模拟生成、已锚定真实最新净值，仅用于演示。实盘复盘请导入你的真实净值 CSV（列：日期, 净值，支持中文表头）。</p>
+        <div class="import-row">
+          <input type="text" id="impName" placeholder="基金名称" />
+          <input type="text" id="impCode" placeholder="代码(如 110011)" />
+          <label class="chk"><input type="checkbox" id="impBench" /> 设为基准</label>
+          <input type="file" id="impFile" accept=".csv,.txt" />
+          <button id="impBtn" class="btn small">导入 CSV</button>
+          <span id="impStatus" class="status"></span>
+        </div>
+        <details class="fetch-box">
+          <summary>在线抓取（实验性 · 受浏览器跨域限制，失败请用 CSV）</summary>
+          <div class="import-row">
+            <input type="text" id="fetchCode" placeholder="代码" />
+            <input type="date" id="fetchStart" />
+            <input type="date" id="fetchEnd" />
+            <button id="fetchBtn" class="btn small">抓取净值</button>
+            <span id="fetchStatus" class="status"></span>
+          </div>
+        </details>
+        <div id="fundList" class="fund-list"></div>
+        <div class="import-row" style="margin-top:10px">
+          <button id="exportBtn" class="btn small ghost">导出当前策略 JSON</button>
+          <input type="file" id="importStrategyFile" accept=".json" />
+        </div>
+      </section>
+    </section>
+
+    <footer class="foot">本地静态工具 · 数据均在浏览器内处理，不上传 · 净值来源可来自天天基金/东方财富</footer>
+  </main>
 
   <script src="js/lib/echarts.min.js"></script>
   <script src="js/sample-data.js"></script>
@@ -257,5 +312,28 @@
   <script src="js/analytics.js"></script>
   <script src="js/charts.js"></script>
   <script src="js/app.js"></script>
+  <script>
+  // 区块导航滚动高亮（独立、零依赖、失败不影响主程序）
+  (function () {
+    try {
+      var links = Array.prototype.slice.call(document.querySelectorAll('.topnav a'));
+      if (!links.length) return;
+      var map = {};
+      links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
+      var obs = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting) {
+            links.forEach(function (a) { a.classList.remove('active'); });
+            if (map[e.target.id]) map[e.target.id].classList.add('active');
+          }
+        });
+      }, { rootMargin: '-45% 0px -50% 0px', threshold: 0 });
+      Object.keys(map).forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) obs.observe(el);
+      });
+    } catch (err) {}
+  })();
+  </script>
 </body>
 </html>
